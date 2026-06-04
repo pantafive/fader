@@ -16,12 +16,27 @@ final class AudioProcessMonitor {
     @ObservationIgnored private var listListener: HALListener?
     @ObservationIgnored private var outputListeners: [AudioObjectID: HALListener] = [:]
     @ObservationIgnored private var pendingRefresh: Task<Void, Never>?
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     func start() {
         listListener = AudioObjectID.system.listen(kAudioHardwarePropertyProcessObjectList) {
             Task { @MainActor [weak self] in self?.scheduleRefresh() }
         }
+        // The HAL reliably notifies about list changes but, in practice, not
+        // about per-process IsRunningOutput flips — poll those. Reading the
+        // flags of a few dozen process objects costs microseconds.
+        pollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                self?.refresh()
+            }
+        }
         refresh()
+    }
+
+    deinit {
+        pollTask?.cancel()
+        pendingRefresh?.cancel()
     }
 
     /// Coalesces listener bursts: HAL fires once per process and once per
@@ -88,10 +103,10 @@ final class AudioProcessMonitor {
         }
 
         outputListeners = nextOutputListeners
-        let names = nextApps.map { "\($0.name)\($0.isPlaying ? "*" : "")" }.joined(separator: ", ")
-        Self.logger.info("Apps: \(nextApps.count)/\(objectIDs.count) HAL processes — \(names, privacy: .public)")
         if nextApps != apps {
             apps = nextApps
+            let names = nextApps.map { "\($0.name)\($0.isPlaying ? "*" : "")" }.joined(separator: ", ")
+            Self.logger.info("Apps: \(nextApps.count)/\(objectIDs.count) HAL processes — \(names, privacy: .public)")
         }
     }
 
