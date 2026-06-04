@@ -79,5 +79,10 @@ else {
 }
 
 let output = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-1024.png")
-try! png.write(to: output)
+do {
+    try png.write(to: output)
+} catch {
+    fatalError("Failed to write \(output.path): \(error)")
+}
+
 print("Wrote \(output.path)")
