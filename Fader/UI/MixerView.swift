@@ -84,6 +84,12 @@ struct MixerView: View {
         }
     }
 
+    /// Apps audible right now, plus silent ones the user has adjusted —
+    /// hiding those would strand their saved volume.
+    private var mixerApps: [AudioApp] {
+        engine.processMonitor.apps.filter { $0.isPlaying || !engine.volume(for: $0).isNeutral }
+    }
+
     @ViewBuilder
     private var appsSection: some View {
         if !engine.isStarted {
@@ -97,14 +103,14 @@ struct MixerView: View {
                 Spacer()
             }
             .padding(.vertical, 16)
-        } else if engine.processMonitor.apps.isEmpty {
+        } else if mixerApps.isEmpty {
             HStack {
                 Spacer()
                 VStack(spacing: 6) {
                     Image(systemName: "waveform.slash")
                         .font(.system(size: 22))
                         .foregroundStyle(.tertiary)
-                    Text("No apps using audio")
+                    Text("Nothing is playing")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -115,7 +121,7 @@ struct MixerView: View {
             // MenuBarExtra windows size to the content's ideal height, and a
             // ScrollView's ideal height is zero — give it an explicit one.
             let rowHeight: CGFloat = 57
-            let apps = engine.processMonitor.apps
+            let apps = mixerApps
             ScrollView {
                 VStack(spacing: 12) {
                     ForEach(apps) { app in
