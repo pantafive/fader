@@ -10,6 +10,7 @@ struct ControlSlider: View {
     var onIconTap: (() -> Void)?
 
     @State private var isDragging = false
+    @State private var scrollMonitor: Any?
 
     private let height: CGFloat = 22
 
@@ -49,6 +50,8 @@ struct ControlSlider: View {
             }
             .compositingGroup()
             .animation(.easeOut(duration: 0.08), value: isDragging)
+            // Smooths scroll-wheel steps; direct finger drags stay 1:1.
+            .animation(isDragging ? nil : .easeOut(duration: 0.12), value: value)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
@@ -64,5 +67,35 @@ struct ControlSlider: View {
             )
         }
         .frame(height: height)
+        // Scroll over the slider adjusts the value. The monitor lives only
+        // while the cursor is over this slider, so it sees exactly the events
+        // meant for it; installing on hover (not appear) keeps one popover
+        // open/close cycle from stacking monitors.
+        .onHover { hovering in
+            if hovering, scrollMonitor == nil {
+                scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                    adjust(by: event)
+                    return nil // consumed: don't also scroll the app list
+                }
+            } else if !hovering {
+                removeScrollMonitor()
+            }
+        }
+        .onDisappear(perform: removeScrollMonitor)
+    }
+
+    /// Trackpads send many precise pixel deltas per gesture, wheel mice send
+    /// coarse line deltas — scale each so a comfortable gesture sweeps
+    /// roughly half the slider.
+    private func adjust(by event: NSEvent) {
+        let scale: Float = event.hasPreciseScrollingDeltas ? 1 / 120 : 1 / 12
+        value = min(max(value + Float(event.scrollingDeltaY) * scale, 0), 1)
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
     }
 }
