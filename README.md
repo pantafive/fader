@@ -2,17 +2,11 @@
 
 [![CI](https://github.com/pantafive/fader/actions/workflows/ci.yml/badge.svg)](https://github.com/pantafive/fader/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/pantafive/fader)](https://github.com/pantafive/fader/releases/latest) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Volume control for macOS that lives in the menu bar: switch the output device with one click, connect Bluetooth headphones, and set a separate volume for every app. Site: [fader.pantafive.dev](https://fader.pantafive.dev).
+A macOS menu bar app for audio output switching and per-app volume. Switch the output device in one click, connect Bluetooth headphones, and set a separate volume for every app. The binary is ~0.7 MB, self-contained, signed, and notarized. Site: [fader.pantafive.dev](https://fader.pantafive.dev).
 
-Fader is free and open source. It sends nothing anywhere — no telemetry, no analytics, no network access at all. Audio is processed on your Mac through the system's own Core Audio process taps (an API introduced in macOS 14.4; Fader supports macOS 15+), so there is no kernel extension and no virtual audio driver to install.
+![Fader popover: output devices with priority order, Bluetooth section, per-app volume fader](docs/screenshot.png)
 
-## Features
-
-- One-click switching between output devices — headphones, speakers, AirPlay — with the active one marked.
-- Bluetooth management: paired headphones connect straight from the popover, and audio routes to them automatically.
-- Per-app volume sliders and mute. An app at 100% is untouched: Fader only taps an app's audio after you adjust it, the default audio path stays bit-perfect.
-- System output volume and mute, in sync with the volume keys and Control Center.
-- Volumes persist per app across launches and reboots.
+It sends nothing anywhere: no telemetry, no analytics, no network code at all. Per-app volume is processed on-device through Core Audio process taps (an API added in macOS 14.4), so there is no kernel extension and no virtual audio driver to install. Requires macOS 15+ on Apple silicon.
 
 ## Install
 
@@ -20,11 +14,37 @@ Fader is free and open source. It sends nothing anywhere — no telemetry, no an
 brew install --cask pantafive/tap/fader
 ```
 
-Or download [the latest dmg](https://github.com/pantafive/fader/releases/latest/download/Fader.dmg) — signed and notarized. Requires macOS 15+.
+Or download [the latest dmg](https://github.com/pantafive/fader/releases/latest/download/Fader.dmg). Both are signed and notarized.
+
+## Features
+
+### Output devices
+
+Output devices switch with one click. Headphones, speakers, displays, and AirPlay targets all appear in the popover, with the active one marked. Paired-but-disconnected Bluetooth headphones are listed too; clicking one connects it and routes audio there in a single action, and you disconnect from the same row.
+
+Drag a device row to set its priority. The order becomes your auto-switch preference: when a higher-priority device connects Fader switches to it, and when the current default disappears Fader falls back to the best-ranked device still present. This stays dormant until you first reorder. Wired devices unused for 30 days collapse into a "Rarely used" group, and you can demote a row manually by dragging it onto the group.
+
+### Per-app volume
+
+Every app that plays sound gets a volume fader and a mute toggle. Volumes persist across launches. An app left at 100% and unmuted is untouched: no tap, no processing, bit-perfect native playback. The tap exists only while a fader sits below full volume or an app is muted.
+
+### Microphone
+
+The microphone tab switches the default input and sets input gain. The gain slider disables itself on devices whose gain is hardware-only, so the control never lies about what it can do. It also shows which apps are using the microphone right now, so you can spot a forgotten recorder. That last part is an indicator only, because Core Audio exposes no per-app input gain.
+
+### Throughout
+
+System output volume and mute stay in sync with the volume keys and Control Center. Scrolling the wheel or trackpad over any slider adjusts it.
 
 ## Permissions
 
-Adjusting an app's volume uses a Core Audio process tap, which macOS gates behind the System Audio Recording permission. Fader asks for it the first time you move a per-app slider. The tapped audio is re-rendered to your output device with the gain you set and never leaves the audio pipeline. Device switching and system volume need no permissions.
+Most of Fader needs no permission at all. Device switching, system volume, and the entire microphone tab work the moment you install. The one ask is for per-app volume, which uses a Core Audio process tap (the macOS 14.4+ API) that macOS gates behind the System Audio Recording permission. Fader requests it only the first time you move an app's fader.
+
+The name of that permission sounds broader than what Fader does with it, so it is worth stating plainly here rather than letting a system dialog surprise you. The tapped audio is re-rendered to your output device with the gain applied and never leaves the Mac. There are no kernel extensions and no virtual audio drivers.
+
+## Privacy
+
+Fader has zero telemetry, zero analytics, and zero network code, so it cannot phone home even by accident. The website loads no external resources either. Being open source under MIT, the claim is checkable: read the source and confirm there is nothing reaching out.
 
 ## Development
 
@@ -33,11 +53,19 @@ brew install xcodegen swiftlint swiftformat
 make run
 ```
 
-`make` drives local work: `gen`, `build`, `test`, `lint`, `format`, `run`. The Xcode project is generated by XcodeGen from `project.yml` and is not committed — edit `project.yml`, never the `.xcodeproj`. CI lints and tests every push; pushing a `v*` tag builds, signs, notarizes, and publishes the dmg as a GitHub release; the site redeploys on every push to `main` that touches `site/`.
+Built in Swift 6 with strict concurrency. The Xcode project is generated by XcodeGen from `project.yml` and is not committed, so edit `project.yml` rather than the `.xcodeproj`. `make` drives local work: `gen`, `build`, `test`, `lint`, `format`, `run`.
+
+CI lints and tests every push. Pushing a `v*` tag builds, signs, notarizes, and publishes the dmg as a GitHub release.
+
+The real-time audio callback runs on the HAL IO thread. No allocation, locks, Objective-C, or logging is allowed inside it.
 
 ## Contributing
 
-Bug reports and pull requests are welcome; for anything bigger than a fix, open an issue first. `make test` and `make lint` must pass. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org), imperative mood, English. The real-time audio callback (`ProcessTap.render`) runs on the HAL IO thread — no allocation, locks, Objective-C, or logging inside it; changes there get extra scrutiny. Contributions adding telemetry, analytics, or anything that phones home will be declined.
+Bug reports and pull requests are welcome; for anything bigger than a fix, open an issue first. `make test` and `make lint` must pass. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org), imperative mood, English.
+
+Changes to the real-time audio callback get extra scrutiny for the constraints above. Contributions adding telemetry, analytics, or anything that phones home will be declined.
+
+## Security
 
 Report security issues privately via [GitHub security advisories](https://github.com/pantafive/fader/security/advisories/new), not public issues.
 
