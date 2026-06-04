@@ -341,7 +341,7 @@
   }
   .mock .row:hover { background: rgba(255, 255, 255, 0.05); }
   .mock .row.dim { color: var(--muted); }
-  .mock .row.dragging { background: rgba(255, 255, 255, 0.07); opacity: 0.9; }
+  .mock .row.dragging { background: rgba(255, 255, 255, 0.07); opacity: 0.9; position: relative; z-index: 5; cursor: grabbing; }
   .mock.drag-live .row:not(.dragging):hover { background: transparent; }
   .mock .row.drop-target { background: rgba(91, 155, 255, 0.18); color: var(--text); }
   .mock .row .chev { font-size: 15px; line-height: 1; transition: transform 0.2s ease; }
@@ -757,7 +757,9 @@
       row.addEventListener("pointerdown", (event) => {
         if (row.parentElement === rareFold) return; // folded rows just click
         const startY = event.clientY;
+        const grabOffset = startY - row.getBoundingClientRect().top;
         let dragging = false;
+        let baseTop = 0;
         const overRare = (y) => {
           if (rareToggle.style.display === "none") return false;
           const r = rareToggle.getBoundingClientRect();
@@ -769,20 +771,26 @@
             row.setPointerCapture(event.pointerId);
             row.classList.add("dragging");
             mock.classList.add("drag-live");
+            baseTop = row.getBoundingClientRect().top;
           }
           if (!dragging) return;
+          const desiredTop = ev.clientY - grabOffset;
+          const center = desiredTop + row.offsetHeight / 2;
           const dropOK = overRare(ev.clientY) && canDemote(row);
           rareToggle.classList.toggle("drop-target", dropOK);
           if (!dropOK) {
             for (const sib of row.parentElement.querySelectorAll(".row[data-device]")) {
               if (sib === row || sib.parentElement === rareFold) continue;
               const r = sib.getBoundingClientRect();
-              if (ev.clientY > r.top && ev.clientY < r.bottom) {
-                row.parentElement.insertBefore(row, ev.clientY < r.top + r.height / 2 ? sib : sib.nextSibling);
+              if (center > r.top && center < r.bottom) {
+                row.parentElement.insertBefore(row, center < r.top + r.height / 2 ? sib : sib.nextSibling);
+                row.style.transform = "";
+                baseTop = row.getBoundingClientRect().top; // slot moved under us
                 break;
               }
             }
           }
+          row.style.transform = `translateY(${desiredTop - baseTop}px)`;
           drawFlows();
         };
         const stop = (ev) => {
@@ -790,6 +798,7 @@
           row.removeEventListener("pointerup", stop);
           row.removeEventListener("pointercancel", stop);
           if (!dragging) return;
+          row.style.transform = "";
           row.classList.remove("dragging");
           mock.classList.remove("drag-live");
           rareToggle.classList.remove("drop-target");
