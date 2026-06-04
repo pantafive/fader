@@ -2,7 +2,7 @@ import CoreAudio
 import Observation
 import os
 
-/// An output-capable audio device.
+/// An audio device with channels in the monitored direction.
 struct AudioDevice: Identifiable, Hashable {
     let id: AudioDeviceID
     let uid: String
@@ -38,11 +38,14 @@ struct AudioDevice: Identifiable, Hashable {
     }
 }
 
-/// Watches output devices and the system default, and switches the default.
+/// Watches the devices of one direction and the system default, and switches
+/// the default. Usage stamps and drag-priority persist per direction.
 @MainActor
 @Observable
 final class AudioDeviceMonitor {
     private static let logger = Logger(subsystem: "dev.pantafive.fader", category: "AudioDeviceMonitor")
+
+    let direction: AudioDirection
 
     private(set) var devices: [AudioDevice] = []
     private(set) var defaultDeviceID = AudioDeviceID.unknown
@@ -52,14 +55,21 @@ final class AudioDeviceMonitor {
     // them re-read when defaultDeviceID (observed) moves a device between
     // the main list and the rarely-used group.
     @ObservationIgnored private var lastUsed: [String: Date] = [:]
-    @ObservationIgnored private let usageStore = DeviceUsageStore()
+    @ObservationIgnored private let usageStore: DeviceUsageStore
     // Not observed: every priority change re-sorts `devices`, which is.
     @ObservationIgnored private var priority: [String] = []
-    @ObservationIgnored private let priorityStore = DevicePriorityStore()
+    @ObservationIgnored private let priorityStore: DevicePriorityStore
     /// Auto-switch needs a populated baseline — at startup every device
     /// "appears" at once and none of that is a hotplug event.
     @ObservationIgnored private var hasBaseline = false
     @ObservationIgnored private var lastDefaultUID: String?
+
+    init(direction: AudioDirection = .output) {
+        self.direction = direction
+        let suffix = direction == .input ? "Input" : ""
+        usageStore = DeviceUsageStore(key: "deviceLastUsed" + suffix)
+        priorityStore = DevicePriorityStore(key: "devicePriority" + suffix)
+    }
 
     func start() {
         lastUsed = usageStore.load()
@@ -68,7 +78,7 @@ final class AudioDeviceMonitor {
             AudioObjectID.system.listen(kAudioHardwarePropertyDevices) {
                 Task { @MainActor [weak self] in self?.refresh() }
             },
-            AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
+            AudioObjectID.system.listen(direction.defaultDeviceSelector) {
                 Task { @MainActor [weak self] in self?.refresh() }
             },
         ]
@@ -77,10 +87,10 @@ final class AudioDeviceMonitor {
 
     func setDefault(_ device: AudioDevice) {
         do {
-            try AudioObjectID.system.write(kAudioHardwarePropertyDefaultOutputDevice, value: device.id)
+            try AudioObjectID.system.write(direction.defaultDeviceSelector, value: device.id)
             defaultDeviceID = device.id
         } catch {
-            Self.logger.error("Failed to set default output to \(device.name): \(error.localizedDescription)")
+            Self.logger.error("Failed to set default device to \(device.name): \(error.localizedDescription)")
         }
     }
 
@@ -110,7 +120,7 @@ final class AudioDeviceMonitor {
     }
 
     func refresh() {
-        defaultDeviceID = (try? AudioObjectID.readDefaultOutputDevice()) ?? .unknown
+        defaultDeviceID = (try? AudioObjectID.readDefaultDevice(direction)) ?? .unknown
         let defaultUID = try? defaultDeviceID.readDeviceUID()
         stampDefaultDevice(uid: defaultUID)
 
@@ -122,7 +132,7 @@ final class AudioDeviceMonitor {
 
         let previousUIDs = Set(devices.map(\.uid))
         devices = sorted(ids.compactMap { id in
-            guard id.outputChannelCount() > 0,
+            guard id.channelCount(scope: direction.scope) > 0,
                   let uid = try? id.readDeviceUID(),
                   let name = try? id.readString(kAudioObjectPropertyName)
             else { return nil }
@@ -169,7 +179,7 @@ final class AudioDeviceMonitor {
            !devices.contains(where: { $0.uid == previous }) {
             if let fallback = devices.filter({ rank($0.uid) != Int.max }).min(by: { rank($0.uid) < rank($1.uid) }),
                fallback.uid != defaultUID {
-                Self.logger.info("Default output disappeared; switching to \(fallback.name)")
+                Self.logger.info("Default device disappeared; switching to \(fallback.name)")
                 setDefault(fallback)
             }
             return
@@ -194,11 +204,11 @@ final class AudioDeviceMonitor {
 }
 
 extension AudioObjectID {
-    /// Total output channels across all output streams.
-    func outputChannelCount() -> Int {
+    /// Total channels across all streams of the given scope.
+    func channelCount(scope: AudioObjectPropertyScope) -> Int {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: scope,
             mElement: kAudioObjectPropertyElementMain
         )
         var size: UInt32 = 0

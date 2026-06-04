@@ -14,6 +14,8 @@ final class MixerEngine {
     let processMonitor = AudioProcessMonitor()
     let systemVolume = SystemVolumeController()
     let deviceMonitor = AudioDeviceMonitor()
+    let inputVolume = SystemVolumeController(direction: .input)
+    let inputDeviceMonitor = AudioDeviceMonitor(direction: .input)
     let bluetooth = BluetoothAudioMonitor()
 
     /// Set when tap creation fails with a permission-shaped error.
@@ -37,6 +39,8 @@ final class MixerEngine {
         processMonitor.start()
         systemVolume.start()
         deviceMonitor.start()
+        inputVolume.start()
+        inputDeviceMonitor.start()
         bluetooth.refresh()
 
         // Rebuild taps when the default output device changes — each aggregate

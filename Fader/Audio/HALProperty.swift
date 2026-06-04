@@ -6,6 +6,27 @@ enum HALError: Error {
     case osStatus(OSStatus, AudioObjectPropertySelector)
 }
 
+/// Output vs. input side of the audio system. Everything device-related —
+/// default-device selector, channel/volume scope — hangs off this.
+enum AudioDirection {
+    case output
+    case input
+
+    var defaultDeviceSelector: AudioObjectPropertySelector {
+        switch self {
+        case .output: kAudioHardwarePropertyDefaultOutputDevice
+        case .input: kAudioHardwarePropertyDefaultInputDevice
+        }
+    }
+
+    var scope: AudioObjectPropertyScope {
+        switch self {
+        case .output: kAudioDevicePropertyScopeOutput
+        case .input: kAudioDevicePropertyScopeInput
+        }
+    }
+}
+
 extension AudioObjectID {
     static let system = AudioObjectID(kAudioObjectSystemObject)
     static let unknown = AudioObjectID(kAudioObjectUnknown)
@@ -71,6 +92,23 @@ extension AudioObjectID {
         guard status == noErr else { throw HALError.osStatus(status, selector) }
     }
 
+    /// True when the object exposes the property at all.
+    func hasProperty(_ selector: AudioObjectPropertySelector,
+                     scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> Bool {
+        var address = Self.address(selector, scope: scope)
+        return AudioObjectHasProperty(self, &address)
+    }
+
+    /// True when the property exists and accepts writes. Input gain in
+    /// particular is read-only or absent on plenty of devices.
+    func isSettable(_ selector: AudioObjectPropertySelector,
+                    scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> Bool {
+        var address = Self.address(selector, scope: scope)
+        var settable = DarwinBoolean(false)
+        guard AudioObjectIsPropertySettable(self, &address, &settable) == noErr else { return false }
+        return settable.boolValue
+    }
+
     /// Registers a main-queue listener for a property. Returns a token to remove it.
     func listen(_ selector: AudioObjectPropertySelector,
                 scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
@@ -80,10 +118,14 @@ extension AudioObjectID {
 
     // MARK: - Typed conveniences
 
-    static func readDefaultOutputDevice() throws -> AudioDeviceID {
+    static func readDefaultDevice(_ direction: AudioDirection) throws -> AudioDeviceID {
         var device = AudioDeviceID.unknown
-        try AudioObjectID.system.read(kAudioHardwarePropertyDefaultOutputDevice, into: &device)
+        try AudioObjectID.system.read(direction.defaultDeviceSelector, into: &device)
         return device
+    }
+
+    static func readDefaultOutputDevice() throws -> AudioDeviceID {
+        try readDefaultDevice(.output)
     }
 
     static func readProcessList() throws -> [AudioObjectID] {
@@ -99,6 +141,12 @@ extension AudioObjectID {
     func readProcessIsRunningOutput() -> Bool {
         var value: UInt32 = 0
         try? read(kAudioProcessPropertyIsRunningOutput, into: &value)
+        return value != 0
+    }
+
+    func readProcessIsRunningInput() -> Bool {
+        var value: UInt32 = 0
+        try? read(kAudioProcessPropertyIsRunningInput, into: &value)
         return value != 0
     }
 

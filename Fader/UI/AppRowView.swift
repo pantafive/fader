@@ -54,3 +54,25 @@ struct AppRowView: View {
         }
     }
 }
+
+/// An app currently capturing the microphone. Indicator only: Core Audio
+/// offers no per-app input gain to put a slider on.
+struct RecordingAppRow: View {
+    let app: AudioApp
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: app.icon)
+                .resizable()
+                .frame(width: 18, height: 18)
+            Text(app.name)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+            Spacer()
+            Image(systemName: "mic.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(.orange)
+        }
+        .frame(height: 28)
+    }
+}

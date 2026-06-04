@@ -8,11 +8,14 @@ struct DeviceUsageStore {
     /// Devices unused for this long collapse into the "Rarely used" group.
     static let retention: TimeInterval = 30 * 24 * 60 * 60
 
-    private static let key = "deviceLastUsed"
+    private let key: String
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    /// Output and input devices keep separate histories — pass a distinct key
+    /// per direction.
+    init(defaults: UserDefaults = .standard, key: String = "deviceLastUsed") {
         self.defaults = defaults
+        self.key = key
     }
 
     static func isRecent(_ lastUsed: Date?, now: Date = Date()) -> Bool {
@@ -21,7 +24,7 @@ struct DeviceUsageStore {
     }
 
     func load() -> [String: Date] {
-        guard let data = defaults.data(forKey: Self.key),
+        guard let data = defaults.data(forKey: key),
               let decoded = try? JSONDecoder().decode([String: Date].self, from: data)
         else { return [:] }
         return decoded
@@ -35,6 +38,6 @@ struct DeviceUsageStore {
                 .error("Failed to encode device usage; not persisted")
             return
         }
-        defaults.set(data, forKey: Self.key)
+        defaults.set(data, forKey: key)
     }
 }

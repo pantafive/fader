@@ -17,6 +17,9 @@ struct DeviceRowView: View {
 
     @Environment(MixerEngine.self) private var engine
     let device: AudioDevice
+    /// The monitor the row belongs to — output and input lists switch their
+    /// own system default.
+    let monitor: AudioDeviceMonitor
     var reorder: ((ReorderEvent) -> Void)?
     /// True while a *different* row is being dragged: rows sliding past the
     /// cursor must not flash their hover chrome.
@@ -26,7 +29,7 @@ struct DeviceRowView: View {
     @State private var isDraggingRow = false
 
     private var isActive: Bool {
-        engine.deviceMonitor.defaultDeviceID == device.id
+        monitor.defaultDeviceID == device.id
     }
 
     private var showsHover: Bool {
@@ -72,7 +75,7 @@ struct DeviceRowView: View {
         )
         .onHover { isHovering = $0 }
         .onTapGesture {
-            engine.deviceMonitor.setDefault(device)
+            monitor.setDefault(device)
         }
         .gesture(reorderGesture)
     }
@@ -100,6 +103,7 @@ struct DeviceRowView: View {
 /// drag-demoting a device out of the main list.
 struct RarelyUsedDisclosure: View {
     let devices: [AudioDevice]
+    let monitor: AudioDeviceMonitor
     var isDropTarget: Bool = false
 
     @State private var isExpanded = false
@@ -135,7 +139,7 @@ struct RarelyUsedDisclosure: View {
 
         if isExpanded {
             ForEach(devices) { device in
-                DeviceRowView(device: device)
+                DeviceRowView(device: device, monitor: monitor)
             }
         }
     }

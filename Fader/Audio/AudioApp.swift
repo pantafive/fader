@@ -10,6 +10,7 @@ struct AudioApp: Identifiable, Hashable {
     let name: String
     let objectIDs: [AudioObjectID]
     let isPlaying: Bool
+    let isRecording: Bool
 
     /// App icon resolved through NSRunningApplication; cheap, AppKit caches it.
     @MainActor

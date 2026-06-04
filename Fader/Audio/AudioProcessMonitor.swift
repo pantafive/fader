@@ -63,6 +63,7 @@ final class AudioProcessMonitor {
             let app: NSRunningApplication
             var objects: [AudioObjectID] = []
             var playing = false
+            var recording = false
         }
         var groups: [pid_t: Group] = [:]
 
@@ -82,19 +83,23 @@ final class AudioProcessMonitor {
             var group = groups[key] ?? Group(app: running)
             group.objects.append(objectID)
             group.playing = group.playing || objectID.readProcessIsRunningOutput()
+            group.recording = group.recording || objectID.readProcessIsRunningInput()
             groups[key] = group
         }
 
         var nextApps = groups.compactMap { pid, group -> AudioApp? in
             // Regular apps always; agents and helpers only while they actually
-            // play — keeps Control Center, Siri, and GPU helpers out.
-            guard group.app.activationPolicy == .regular || group.playing else { return nil }
+            // play or record — keeps Control Center, Siri, and GPU helpers out
+            // without dropping background recorders (meeting helpers).
+            guard group.app.activationPolicy == .regular || group.playing || group.recording
+            else { return nil }
             return AudioApp(
                 id: pid,
                 bundleID: group.app.bundleIdentifier ?? "",
                 name: group.app.localizedName ?? group.app.bundleIdentifier ?? "pid \(pid)",
                 objectIDs: group.objects.sorted(),
-                isPlaying: group.playing
+                isPlaying: group.playing,
+                isRecording: group.recording
             )
         }
 

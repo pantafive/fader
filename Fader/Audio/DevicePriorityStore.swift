@@ -6,11 +6,14 @@ import os
 /// never reordered are unranked and never auto-switched to. Persisted as a
 /// single JSON blob in UserDefaults.
 struct DevicePriorityStore {
-    private static let key = "devicePriority"
+    private let key: String
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    /// Output and input devices rank independently — pass a distinct key
+    /// per direction.
+    init(defaults: UserDefaults = .standard, key: String = "devicePriority") {
         self.defaults = defaults
+        self.key = key
     }
 
     /// Folds a reorder of the *visible* rows back into the stored order.
@@ -31,7 +34,7 @@ struct DevicePriorityStore {
     }
 
     func load() -> [String] {
-        guard let data = defaults.data(forKey: Self.key),
+        guard let data = defaults.data(forKey: key),
               let decoded = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
         return decoded
@@ -44,6 +47,6 @@ struct DevicePriorityStore {
                 .error("Failed to encode device priority; not persisted")
             return
         }
-        defaults.set(data, forKey: Self.key)
+        defaults.set(data, forKey: key)
     }
 }
