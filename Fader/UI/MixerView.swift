@@ -32,13 +32,29 @@ struct MixerView: View {
         engine.bluetooth.paired.filter { !$0.isConnected }
     }
 
+    /// Bluetooth devices cluster together: wired and built-in outputs first,
+    /// then connected Bluetooth, then paired-but-disconnected headphones.
     private var devicesSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(engine.deviceMonitor.devices) { device in
+        let wired = engine.deviceMonitor.devices.filter { !$0.isBluetooth }
+        let bluetooth = engine.deviceMonitor.devices.filter(\.isBluetooth)
+
+        return VStack(alignment: .leading, spacing: 2) {
+            ForEach(wired) { device in
                 DeviceRowView(device: device)
             }
-            ForEach(disconnectedBluetooth) { device in
-                BluetoothRowView(device: device)
+            if !bluetooth.isEmpty || !disconnectedBluetooth.isEmpty {
+                Text("Bluetooth")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                ForEach(bluetooth) { device in
+                    DeviceRowView(device: device)
+                }
+                ForEach(disconnectedBluetooth) { device in
+                    BluetoothRowView(device: device)
+                }
             }
         }
         .padding(.horizontal, -8)

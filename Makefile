@@ -73,9 +73,9 @@ release: check-version test
 # Upload the dmg to R2 (versioned + latest), tag, and create a GitHub release.
 publish: check-version
 	wrangler r2 object put "fader/Fader-v$(APP_VERSION).dmg" \
-		--file "$(DMG)" --content-type application/x-apple-diskimage --remote
+		--file "$(DMG)" --content-type application/x-apple-diskimage
 	wrangler r2 object put "fader/Fader.dmg" \
-		--file "$(DMG)" --content-type application/x-apple-diskimage --remote
+		--file "$(DMG)" --content-type application/x-apple-diskimage
 	git tag "v$(APP_VERSION)"
 	git push origin "v$(APP_VERSION)"
 	GH_TOKEN=$$(gh auth token -u pantafive) gh release create "v$(APP_VERSION)" "$(DMG)" \
