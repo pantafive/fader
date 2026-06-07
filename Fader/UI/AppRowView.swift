@@ -2,6 +2,10 @@ import SwiftUI
 
 /// One mixer row: app icon, name, volume percentage, and a ControlSlider.
 struct AppRowView: View {
+    /// Vertical rhythm of the apps list (name line + slider + spacing);
+    /// MixerView's scroll-frame height relies on it, like DeviceRowView's.
+    static let rowHeight: CGFloat = 57
+
     @Environment(MixerEngine.self) private var engine
     let app: AudioApp
 
