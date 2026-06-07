@@ -1,16 +1,25 @@
 import AppKit
+import CoreAudio
 import OSLog
 import Sparkle
 
-/// Sparkle wrapper plus the install-channel fork. A dmg install gets the
-/// standard download-install-relaunch flow; a Homebrew install (Caskroom
-/// receipt on disk) only gets told an update exists — Sparkle swapping a
-/// brew-owned bundle would desync the cask receipt and the next
-/// `brew upgrade` would fight the already-new app.
+/// Sparkle wrapper. Background checks are always on; the "Update
+/// Automatically" toggle controls whether a found update is also downloaded
+/// and installed silently. The Homebrew cask declares `auto_updates true`,
+/// so `brew upgrade` leaves the bundle to Sparkle — both install channels
+/// share this one flow.
 ///
-/// Background checks stay silent (gentle reminders): finding an update sets
+/// With auto-update off, background finds stay gentle reminders: they set
 /// `availableVersion`, which lights the popover row and retitles the menu
 /// item; Sparkle's own windows appear only for a user-initiated check.
+/// With auto-update on, the staged update relaunches the app right away —
+/// but only while nobody would notice: the app in the background and no
+/// audio playing (the restart drops process taps for a moment, so a movie
+/// mid-playback would blip to full per-app volume). Otherwise the row and
+/// menu flip to "Restart to Update" and install-on-quit remains the
+/// backstop. An update relaunch skips the multi-output teardown so the
+/// next instance adopts the still-default aggregate — audio keeps flowing
+/// through the restart.
 @MainActor
 @Observable
 final class UpdateController {
@@ -18,20 +27,22 @@ final class UpdateController {
     /// row and the context-menu title.
     private(set) var availableVersion: String?
 
-    let isHomebrewInstall: Bool
+    /// Version downloaded and staged for install. Invoking `checkForUpdates`
+    /// in this state relaunches into it.
+    private(set) var stagedVersion: String?
 
-    static let homebrewCommand = "brew upgrade --cask fader"
+    /// True while the app is terminating to relaunch into a staged update.
+    /// AppDelegate then leaves the multi-output aggregate alive for the next
+    /// instance to adopt instead of dissolving it.
+    private(set) static var isRelaunchingForUpdate = false
 
     static let log = Logger(subsystem: "dev.pantafive.fader", category: "updates")
 
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
     @ObservationIgnored private let bridge = SparkleBridge()
-    /// A menu-initiated check on the brew channel reports through an alert;
-    /// background checks land on the popover row only.
-    @ObservationIgnored private var manualBrewCheck = false
+    @ObservationIgnored private var relaunchHandler: (() -> Void)?
 
     init() {
-        isHomebrewInstall = Self.homebrewOwnsThisBuild()
         controller = SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: bridge,
@@ -39,51 +50,37 @@ final class UpdateController {
         )
         bridge.owner = self
 
-        // Default-on without Sparkle's first-run permission modal: seed the
-        // user default once. Unlike SUEnableAutomaticChecks in Info.plist,
-        // this stays a preference the menu toggle can flip off.
+        // Checks are forced on every launch: no menu item controls them
+        // anymore, and a stale `false` left by the retired "Check
+        // Automatically" toggle would otherwise kill both auto-update and
+        // the passive banner with no UI to recover. Setting the property
+        // (rather than SUEnableAutomaticChecks in Info.plist) also skips
+        // Sparkle's first-run permission modal. Downloads seed default-on
+        // once and stay a preference the menu toggle can flip off.
         let updater = controller.updater
-        if UserDefaults.standard.object(forKey: "SUEnableAutomaticChecks") == nil {
-            updater.automaticallyChecksForUpdates = true
+        updater.automaticallyChecksForUpdates = true
+        if UserDefaults.standard.object(forKey: "SUAutomaticallyUpdate") == nil {
+            updater.automaticallyDownloadsUpdates = true
         }
         try? updater.start()
     }
 
-    var automaticallyChecksForUpdates: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
-        set { controller.updater.automaticallyChecksForUpdates = newValue }
+    /// The menu toggle: download and install updates without asking.
+    /// Checking stays on either way — off just means the gentle-reminder
+    /// flow where the user clicks to start Sparkle's interactive update.
+    var automaticallyUpdates: Bool {
+        get { controller.updater.automaticallyDownloadsUpdates }
+        set { controller.updater.automaticallyDownloadsUpdates = newValue }
     }
 
-    /// The Caskroom directory alone is stale evidence: it survives a switch
-    /// to the dmg until `brew uninstall`, which would strand that user on
-    /// manual update prompts forever. Brew names the version subdirectory
-    /// after the cask version (== marketing version), so only a subdirectory
-    /// matching the running build proves brew owns this copy; a dmg update
-    /// past the cask gets the standard Sparkle flow back.
-    private static func homebrewOwnsThisBuild() -> Bool {
-        let version = Bundle.main.shortVersion
-        return ["/opt/homebrew/Caskroom/fader", "/usr/local/Caskroom/fader"]
-            .contains { FileManager.default.fileExists(atPath: "\($0)/\(version)") }
-    }
-
-    /// Menu and popover-row action. Dmg: Sparkle's standard interactive flow.
-    /// Brew: a UI-less probe whose outcome comes back as an alert.
+    /// Menu and popover-row action. With an update staged, relaunch into it;
+    /// otherwise run Sparkle's standard interactive flow.
     func checkForUpdates() {
-        guard isHomebrewInstall else {
-            controller.checkForUpdates(nil)
-            return
-        }
-        if let availableVersion {
-            showBrewAlert(version: availableVersion)
+        if relaunchHandler != nil {
+            relaunch()
         } else {
-            manualBrewCheck = true
-            controller.updater.checkForUpdateInformation()
+            controller.checkForUpdates(nil)
         }
-    }
-
-    static func copyHomebrewCommand() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(homebrewCommand, forType: .string)
     }
 
     // MARK: - Bridge callbacks (main thread, re-isolated)
@@ -91,49 +88,38 @@ final class UpdateController {
     fileprivate func updateFound(version: String) {
         Self.log.info("update available: \(version, privacy: .public)")
         availableVersion = version
-        if manualBrewCheck {
-            manualBrewCheck = false
-            showBrewAlert(version: version)
-        }
     }
 
-    /// The feed answered and nothing newer is installable.
+    /// The feed answered and nothing newer is installable. A failed check
+    /// (feed unreachable, bad XML) deliberately does NOT clear a previously
+    /// found version — a transient failure is not evidence the update
+    /// disappeared.
     fileprivate func upToDate() {
         Self.log.info("up to date")
         availableVersion = nil
-        guard manualBrewCheck else { return }
-        manualBrewCheck = false
-        let alert = NSAlert()
-        alert.messageText = "You're up to date"
-        alert.informativeText = "Fader \(Bundle.main.shortVersion) is the latest version."
-        NSApp.activate()
-        alert.runModal()
     }
 
-    /// The check itself failed (feed unreachable, bad XML). A previously
-    /// found version stays on the banner — a transient failure is not
-    /// evidence the update disappeared.
-    fileprivate func checkFailed(_ message: String) {
-        Self.log.error("check failed: \(message, privacy: .public)")
-        guard manualBrewCheck else { return }
-        manualBrewCheck = false
-        let alert = NSAlert()
-        alert.messageText = "Couldn't check for updates"
-        alert.informativeText = "The update feed is unreachable. Try again later."
-        NSApp.activate()
-        alert.runModal()
-    }
-
-    private func showBrewAlert(version: String) {
-        let alert = NSAlert()
-        alert.messageText = "Fader \(version) is available"
-        alert.informativeText = "This copy is managed by Homebrew — update from the terminal:\n\(Self.homebrewCommand)"
-        alert.addButton(withTitle: "Copy Command")
-        alert.addButton(withTitle: "Later")
-        NSApp.activate()
-        if alert.runModal() == .alertFirstButtonReturn {
-            Self.copyHomebrewCommand()
+    /// The update is downloaded and staged. Relaunch into it right away
+    /// while nobody is looking — app in the background, output device idle.
+    /// Otherwise surface "Restart to Update" and let the user pick the
+    /// moment; Sparkle installs on quit regardless.
+    fileprivate func updateStaged(version: String, relaunch: @escaping () -> Void) {
+        Self.log.info("update staged: \(version, privacy: .public)")
+        relaunchHandler = relaunch
+        stagedVersion = version
+        if !NSApp.isActive, !Self.audioIsPlaying() {
+            self.relaunch()
         }
+    }
+
+    private func relaunch() {
+        Self.isRelaunchingForUpdate = true
+        relaunchHandler?()
+    }
+
+    private static func audioIsPlaying() -> Bool {
+        guard let device = try? AudioObjectID.readDefaultOutputDevice() else { return false }
+        return device.readDeviceIsRunningSomewhere()
     }
 }
 
@@ -159,14 +145,26 @@ private final class SparkleBridge: NSObject, SPUUpdaterDelegate, @MainActor SPUS
     }
 
     /// Fires for every aborted cycle, including the benign outcomes already
-    /// handled elsewhere — filter those, report the genuine failures.
+    /// handled elsewhere — filter those, log the genuine failures.
     func updater(_: SPUUpdater, didAbortWithError error: Error) {
         let nsError = error as NSError
         if nsError.domain == SUSparkleErrorDomain {
             let benign: [SUError] = [.noUpdateError, .installationCanceledError, .installationAuthorizeLaterError]
             if benign.contains(where: { Int($0.rawValue) == nsError.code }) { return }
         }
-        owner?.checkFailed(error.localizedDescription)
+        UpdateController.log.error("update cycle failed: \(error.localizedDescription, privacy: .public)")
+    }
+
+    /// Fires when the automatic driver has silently downloaded and staged an
+    /// update. Returning true takes over the install reminder; the block
+    /// installs and relaunches without UI and may be invoked again if a
+    /// termination request gets cancelled.
+    func updater(
+        _: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+        immediateInstallationBlock immediateInstallHandler: @escaping () -> Void
+    ) -> Bool {
+        owner?.updateStaged(version: item.displayVersionString, relaunch: immediateInstallHandler)
+        return true
     }
 
     // MARK: - Gentle reminders

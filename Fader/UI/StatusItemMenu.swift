@@ -49,15 +49,21 @@ final class StatusItemMenuController: NSObject {
 
         menu.addItem(.separator())
 
-        let checkTitle = updater.availableVersion.map { "Update to \($0)…" } ?? "Check for Updates…"
+        let checkTitle = updater.stagedVersion.map { "Restart to Update to \($0)" }
+            ?? updater.availableVersion.map { "Update to \($0)…" }
+            ?? "Check for Updates…"
         let check = NSMenuItem(title: checkTitle, action: #selector(checkForUpdates), keyEquivalent: "")
         check.target = self
         menu.addItem(check)
 
-        let autoCheck = NSMenuItem(title: "Check Automatically", action: #selector(toggleAutoCheck), keyEquivalent: "")
-        autoCheck.target = self
-        autoCheck.state = updater.automaticallyChecksForUpdates ? .on : .off
-        menu.addItem(autoCheck)
+        let autoUpdate = NSMenuItem(
+            title: "Update Automatically",
+            action: #selector(toggleAutoUpdate),
+            keyEquivalent: ""
+        )
+        autoUpdate.target = self
+        autoUpdate.state = updater.automaticallyUpdates ? .on : .off
+        menu.addItem(autoUpdate)
 
         menu.addItem(.separator())
 
@@ -94,8 +100,8 @@ final class StatusItemMenuController: NSObject {
         updater.checkForUpdates()
     }
 
-    @objc private func toggleAutoCheck() {
-        updater.automaticallyChecksForUpdates.toggle()
+    @objc private func toggleAutoUpdate() {
+        updater.automaticallyUpdates.toggle()
     }
 
     @objc private func visitWebsite() {

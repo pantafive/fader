@@ -3,11 +3,14 @@ import SwiftUI
 
 /// Quit must dissolve an active multi-output: the public aggregate would
 /// otherwise outlive the app and haunt Sound settings as the default.
+/// Exception: relaunching into an update keeps the aggregate alive so the
+/// next instance adopts it and audio never reroutes.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak static var engine: MixerEngine?
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !UpdateController.isRelaunchingForUpdate else { return }
         Self.engine?.multiOutput.shutdown()
     }
 }

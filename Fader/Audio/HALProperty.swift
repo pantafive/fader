@@ -166,6 +166,13 @@ extension AudioObjectID {
     func readDeviceUID() throws -> String {
         try readString(kAudioDevicePropertyDeviceUID)
     }
+
+    /// True while any process is pulling audio through the device.
+    func readDeviceIsRunningSomewhere() -> Bool {
+        var value: UInt32 = 0
+        try? read(kAudioDevicePropertyDeviceIsRunningSomewhere, into: &value)
+        return value != 0
+    }
 }
 
 /// RAII wrapper for a HAL property listener block dispatched to the main queue.

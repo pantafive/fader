@@ -57,7 +57,7 @@ struct MixerView: View {
                 appsSection
             }
 
-            if let version = updater.availableVersion {
+            if let version = updater.stagedVersion ?? updater.availableVersion {
                 Divider()
                 UpdateBanner(version: version)
             }
