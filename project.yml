@@ -48,7 +48,10 @@ targets:
     entitlements:
       path: Fader/Resources/Fader.entitlements
       properties:
+        com.apple.security.app-sandbox: true
         com.apple.security.device.audio-input: true
+        com.apple.security.device.bluetooth: true
+        com.apple.security.network.client: true
 
   # Hostless unit tests: pure-logic sources are compiled into the bundle
   # directly, so no app process needs to launch (LSUIElement hosts hang
