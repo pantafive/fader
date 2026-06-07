@@ -21,12 +21,13 @@ final class SystemVolumeController {
     private(set) var canSetVolume = true
     private(set) var canMute = true
 
-    @ObservationIgnored private var device = AudioObjectID.unknown
+    @ObservationIgnored private var endpoint: VolumeEndpoint
     @ObservationIgnored private var defaultDeviceListener: HALListener?
     @ObservationIgnored private var deviceListeners: [HALListener] = []
 
     init(direction: AudioDirection = .output) {
         self.direction = direction
+        endpoint = VolumeEndpoint(deviceID: .unknown, scope: direction.scope)
     }
 
     func start() {
@@ -37,23 +38,17 @@ final class SystemVolumeController {
     }
 
     func setVolume(_ value: Float) {
-        let clamped = max(0, min(1, value))
-        do {
-            try device.write(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-                             scope: direction.scope,
-                             value: clamped)
-            volume = clamped
-        } catch {
+        if let applied = endpoint.writeVolume(value) {
+            volume = applied
+        } else {
             readBack() // keep published state honest when the HAL write fails
         }
     }
 
     func toggleMute() {
-        let next: UInt32 = isMuted ? 0 : 1
-        do {
-            try device.write(kAudioDevicePropertyMute, scope: direction.scope, value: next)
-            isMuted = next != 0
-        } catch {
+        if let muted = endpoint.writeMute(!isMuted) {
+            isMuted = muted
+        } else {
             readBack()
         }
     }
@@ -62,18 +57,18 @@ final class SystemVolumeController {
 
     private func attachToDefaultDevice() {
         guard let next = try? AudioObjectID.readDefaultDevice(direction), next.isValid else { return }
-        device = next
-        deviceName = (try? device.readString(kAudioObjectPropertyName)) ?? ""
-        canSetVolume = device.isSettable(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-                                         scope: direction.scope)
-        canMute = device.isSettable(kAudioDevicePropertyMute, scope: direction.scope)
+        endpoint.deviceID = next
+        deviceName = (try? next.readString(kAudioObjectPropertyName)) ?? ""
+        canSetVolume = next.isSettable(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+                                       scope: direction.scope)
+        canMute = next.isSettable(kAudioDevicePropertyMute, scope: direction.scope)
 
         deviceListeners = [
-            device.listen(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-                          scope: direction.scope) {
+            next.listen(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+                        scope: direction.scope) {
                 Task { @MainActor [weak self] in self?.readBack() }
             },
-            device.listen(kAudioDevicePropertyMute, scope: direction.scope) {
+            next.listen(kAudioDevicePropertyMute, scope: direction.scope) {
                 Task { @MainActor [weak self] in self?.readBack() }
             },
         ]
@@ -81,15 +76,11 @@ final class SystemVolumeController {
     }
 
     private func readBack() {
-        var value: Float32 = 1.0
-        if (try? device.read(kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-                             scope: direction.scope,
-                             into: &value)) != nil {
+        if let value = endpoint.readVolume() {
             volume = value
         }
-        var muted: UInt32 = 0
-        if (try? device.read(kAudioDevicePropertyMute, scope: direction.scope, into: &muted)) != nil {
-            isMuted = muted != 0
+        if let muted = endpoint.readMute() {
+            isMuted = muted
         }
     }
 }
