@@ -15,8 +15,8 @@ final class MultiOutputController {
 
     /// Fixed UID: findable across restarts, at most one ever exists.
     static let aggregateUID = "dev.pantafive.fader.multi-output"
-    /// The "Fader" prefix keeps it out of AudioDeviceMonitor's device list.
-    static let aggregateName = "Fader Multi-Output"
+    /// The plumbing prefix keeps it out of AudioDeviceMonitor's device list.
+    static let aggregateName = "\(AudioDevice.plumbingNamePrefix) Multi-Output"
 
     struct Member: Identifiable {
         let device: AudioDevice

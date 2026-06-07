@@ -59,14 +59,15 @@ final class ProcessTap: @unchecked Sendable {
         description.uuid = UUID()
         description.muteBehavior = .mutedWhenTapped
         description.isPrivate = true
-        description.name = "Fader tap #\(processObjectIDs.first ?? 0)"
+        description.name = "\(AudioDevice.plumbingNamePrefix) tap #\(processObjectIDs.first ?? 0)"
 
         var tap = AudioObjectID.unknown
         try checked(AudioHardwareCreateProcessTap(description, &tap), "create process tap")
         tapID = tap
 
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Fader aggregate #\(processObjectIDs.first ?? 0)",
+            // The plumbing prefix keeps it out of AudioDeviceMonitor's list.
+            kAudioAggregateDeviceNameKey: "\(AudioDevice.plumbingNamePrefix) aggregate #\(processObjectIDs.first ?? 0)",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID,
             kAudioAggregateDeviceClockDeviceKey: outputDeviceUID,

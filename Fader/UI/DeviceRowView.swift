@@ -1,5 +1,24 @@
 import SwiftUI
 
+extension AudioDevice {
+    /// SF Symbol for the row icon. The paired IOBluetooth peer, when one
+    /// matches by MAC, carries the minor class and the canonical name.
+    /// (Lives UI-side: Audio/ models stay free of presentation vocabulary.)
+    func symbolName(direction: AudioDirection, bluetoothPeer: BluetoothAudioDevice?) -> String {
+        if isBluetooth {
+            return DeviceSymbol.bluetooth(
+                name: bluetoothPeer?.name ?? name,
+                minorClass: bluetoothPeer?.minorClass ?? 0
+            )
+        }
+        return DeviceSymbol.wired(
+            transport: transport,
+            dataSource: direction == .output ? outputDataSource : inputDataSource,
+            direction: direction
+        )
+    }
+}
+
 /// One output device: transport icon, name, checkmark on the active one.
 /// Clicking switches the system default output. Bluetooth devices get a
 /// disconnect button on hover. With a `reorder` handler the whole row drags
