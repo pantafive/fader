@@ -23,11 +23,11 @@ gen:
 
 build: gen
 	xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Debug \
-		$(SIGN_FLAGS) build
+		$(SIGN_FLAGS) -derivedDataPath build build
 
 test: gen
 	xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Debug \
-		CODE_SIGNING_ALLOWED=NO test
+		CODE_SIGNING_ALLOWED=NO -derivedDataPath build test
 
 # All linters and formatters live in .pre-commit-config.yaml; this is the
 # same suite the commit hook and CI run.
@@ -35,9 +35,10 @@ lint:
 	pre-commit run --all-files
 
 run: build
-	open "$$(xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Debug \
-		-showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR/{print $$3}')/Fader.app"
+	open build/Build/Products/Debug/Fader.app
 
+# `build` is the -derivedDataPath above, so clean actually removes the
+# build products (the default DerivedData location never held them).
 clean:
 	rm -rf build dist $(XCODEPROJ)
 

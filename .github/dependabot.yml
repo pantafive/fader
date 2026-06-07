@@ -1,4 +1,8 @@
 version: 2
+# github-actions only by design: Sparkle (the lone runtime dep) is pinned
+# exact in project.yml + scripts/install-ci-tools.sh and must be bumped
+# together by hand; a `swift` entry would find nothing to parse anyway —
+# there is no Package.swift, the .xcodeproj is generated and ignored.
 updates:
   - package-ecosystem: github-actions
     directory: /
