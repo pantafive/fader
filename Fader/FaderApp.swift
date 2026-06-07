@@ -1,3 +1,4 @@
+import AppKit
 import CoreAudio
 import SwiftUI
 
@@ -23,6 +24,7 @@ struct FaderApp: App {
     @State private var statusMenu: StatusItemMenuController
 
     init() {
+        Self.yieldToRunningInstance()
         let engine = MixerEngine()
         let updater = UpdateController()
         let statusMenu = StatusItemMenuController(updater: updater)
@@ -41,6 +43,25 @@ struct FaderApp: App {
                 engine.start()
             }
         }
+    }
+
+    /// A second copy (dev build, stray drag to another folder) must not run
+    /// alongside the first: two engines would fight over process taps and
+    /// the multi-output aggregate. Launch Services already refuses to
+    /// double-launch the same bundle, so reaching this means a copy at a
+    /// different path — name the live one and bow out.
+    private static func yieldToRunningInstance() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != myPID }
+        guard let other = others.first else { return }
+        let alert = NSAlert()
+        alert.messageText = "Fader is already running"
+        alert.informativeText = "Another copy is running from \(other.bundleURL?.path ?? "another location")."
+        NSApp.activate()
+        alert.runModal()
+        exit(0)
     }
 
     /// SwiftUI's name-based Image fails to resolve loose bundle resources in
