@@ -14,8 +14,8 @@ import sys
 
 from PIL import Image
 
-GAP = 44  # px between opaque cores
-SIDE_LIFT = 28  # sides sit this much higher than the center
+GAP = 24  # px between opaque cores
+CENTER_DROP = 60  # center core's top sits this far below the sides' shared top line
 MARGIN = 4  # canvas padding beyond the shadows
 
 
@@ -41,11 +41,13 @@ def main():
         core_x.append(x)
         x += (right - left) + GAP
 
-    # Vertical: core centers on a common midline, sides lifted.
-    centers = [-SIDE_LIFT, 0, -SIDE_LIFT]
+    # Vertical: side cores share one top line, the center drops below it —
+    # the rhythm stays fixed no matter how the capture heights differ;
+    # only the bottom edge is ragged, and deliberately so.
+    core_top = [0, CENTER_DROP, 0]
     origins = []
-    for img, (left, top, right, bottom), cx, cy in zip(images, cores, core_x, centers):
-        origins.append((cx - left, cy - (top + bottom) // 2))
+    for img, (left, top, _, _), cx, cy in zip(images, cores, core_x, core_top):
+        origins.append((cx - left, cy - top))
 
     # Shift so the full captures (shadows included) start at MARGIN.
     min_x = min(o[0] for o in origins)
