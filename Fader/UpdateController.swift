@@ -31,8 +31,7 @@ final class UpdateController {
     @ObservationIgnored private var manualBrewCheck = false
 
     init() {
-        isHomebrewInstall = ["/opt/homebrew/Caskroom/fader", "/usr/local/Caskroom/fader"]
-            .contains { FileManager.default.fileExists(atPath: $0) }
+        isHomebrewInstall = Self.homebrewOwnsThisBuild()
         controller = SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: bridge,
@@ -53,6 +52,18 @@ final class UpdateController {
     var automaticallyChecksForUpdates: Bool {
         get { controller.updater.automaticallyChecksForUpdates }
         set { controller.updater.automaticallyChecksForUpdates = newValue }
+    }
+
+    /// The Caskroom directory alone is stale evidence: it survives a switch
+    /// to the dmg until `brew uninstall`, which would strand that user on
+    /// manual update prompts forever. Brew names the version subdirectory
+    /// after the cask version (== marketing version), so only a subdirectory
+    /// matching the running build proves brew owns this copy; a dmg update
+    /// past the cask gets the standard Sparkle flow back.
+    private static func homebrewOwnsThisBuild() -> Bool {
+        let version = Bundle.main.shortVersion
+        return ["/opt/homebrew/Caskroom/fader", "/usr/local/Caskroom/fader"]
+            .contains { FileManager.default.fileExists(atPath: "\($0)/\(version)") }
     }
 
     /// Menu and popover-row action. Dmg: Sparkle's standard interactive flow.
@@ -129,7 +140,10 @@ final class UpdateController {
 /// Holds the ObjC delegate conformances so UpdateController stays a plain
 /// observable class. Sparkle calls both delegates on the main thread:
 /// SPUUpdaterDelegate is MainActor-annotated upstream; the user-driver
-/// protocol isn't, so its conformance is declared isolated explicitly.
+/// protocol isn't, so its conformance is declared isolated explicitly —
+/// that rests on SPUStandardUserDriver's main-thread promise, which the
+/// compiler can't check across the ObjC call-in. Swapping in a custom user
+/// driver that dispatches off-main would make this conformance unsound.
 @MainActor
 private final class SparkleBridge: NSObject, SPUUpdaterDelegate, @MainActor SPUStandardUserDriverDelegate {
     weak var owner: UpdateController?
