@@ -56,11 +56,7 @@ final class MultiOutputController {
     func remove(_ device: AudioDevice) {
         guard members.contains(where: { $0.device.uid == device.uid }) else { return }
         let rest = members.map(\.device).filter { $0.uid != device.uid }
-        if rest.count > 1 {
-            apply(rest)
-        } else {
-            dissolve(to: rest.first)
-        }
+        resolve(MultiOutputPolicy.resolution(survivors: rest))
     }
 
     /// Members whose HAL device vanished (Bluetooth dropped) leave; a single
@@ -70,10 +66,13 @@ final class MultiOutputController {
         let presentUIDs = Set(present.map(\.uid))
         let alive = members.map(\.device).filter { presentUIDs.contains($0.uid) }
         guard alive.count < members.count else { return }
-        if alive.count > 1 {
-            apply(alive)
-        } else {
-            dissolve(to: alive.first)
+        resolve(MultiOutputPolicy.resolution(survivors: alive))
+    }
+
+    private func resolve(_ resolution: MultiOutputPolicy.Resolution) {
+        switch resolution {
+        case let .reapply(devices): apply(devices)
+        case let .dissolve(to: device): dissolve(to: device)
         }
     }
 
@@ -87,8 +86,7 @@ final class MultiOutputController {
     // MARK: - Private
 
     private func apply(_ devices: [AudioDevice]) {
-        // Wired clocks hold steadier than Bluetooth; the rest drift-compensate.
-        let clock = devices.first { !$0.isBluetooth } ?? devices[0]
+        guard let clock = MultiOutputPolicy.clock(among: devices) else { return }
 
         // Membership changes recreate the aggregate (mutating the sub-device
         // list in place loses the drift settings). Route to the clock device

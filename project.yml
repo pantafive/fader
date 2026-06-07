@@ -57,12 +57,18 @@ targets:
     type: bundle.unit-test
     platform: macOS
     sources:
+      # Hand-listed on purpose (a glob would silently pull HAL-importing
+      # files in) — extracting a new pure-logic source? Add it here too.
       - Tests
       - Fader/Audio/VolumeStore.swift
       - Fader/Audio/DeviceUsageStore.swift
       - Fader/Audio/DevicePriorityStore.swift
       - Fader/Audio/DeviceSymbol.swift
-      # AudioDirection only; nothing in the tests touches the HAL.
+      - Fader/Audio/AudioDevice.swift
+      - Fader/Audio/DevicePriorityPolicy.swift
+      - Fader/Audio/MultiOutputPolicy.swift
+      # Property wrappers and AudioDirection; nothing in the tests touches
+      # a live HAL.
       - Fader/Audio/HALProperty.swift
     settings:
       base:

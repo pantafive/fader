@@ -110,48 +110,35 @@ final class AudioDeviceMonitor {
 
     // MARK: - Priority
 
-    private func rank(_ uid: String) -> Int {
-        priority.firstIndex(of: uid) ?? Int.max
-    }
-
-    /// Ranked devices in priority order first, unranked after, alphabetical
-    /// within equal rank.
     private func sorted(_ list: [AudioDevice]) -> [AudioDevice] {
-        list.sorted {
-            let lhs = rank($0.uid)
-            let rhs = rank($1.uid)
-            if lhs != rhs { return lhs < rhs }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        DevicePriorityPolicy.ordered(list, priority: priority)
     }
 
-    /// Priority-driven default switching, gated to explicit events so it
-    /// never fights a manual choice:
-    /// - exactly one ranked device appeared (hotplug, not a wake storm) and
-    ///   it outranks the current default → switch to it;
-    /// - the previous default disappeared → override macOS's fallback with
-    ///   the best-ranked device still present.
+    /// Applies the policy's auto-switch decision (see DevicePriorityPolicy).
     private func autoSwitch(previousUIDs: Set<String>, defaultUID: String?) {
         // While multi-output plays, the default is Fader's own aggregate —
         // priority switching would silently tear the pairing apart.
         guard hasBaseline, defaultUID != MultiOutputController.aggregateUID else { return }
 
-        if let previous = lastDefaultUID, previousUIDs.contains(previous),
-           !devices.contains(where: { $0.uid == previous }) {
-            if let fallback = devices.filter({ rank($0.uid) != Int.max }).min(by: { rank($0.uid) < rank($1.uid) }),
-               fallback.uid != defaultUID {
-                Self.logger.info("Default device disappeared; switching to \(fallback.name)")
-                setDefault(fallback)
-            }
+        let decision = DevicePriorityPolicy.autoSwitch(
+            presentUIDs: devices.map(\.uid),
+            previousUIDs: previousUIDs,
+            priority: priority,
+            previousDefaultUID: lastDefaultUID,
+            currentDefaultUID: defaultUID
+        )
+        switch decision {
+        case .stay:
             return
+        case let .fallback(toUID: uid):
+            guard let device = devices.first(where: { $0.uid == uid }) else { return }
+            Self.logger.info("Default device disappeared; switching to \(device.name)")
+            setDefault(device)
+        case let .hotplug(toUID: uid):
+            guard let device = devices.first(where: { $0.uid == uid }) else { return }
+            Self.logger.info("Higher-priority device connected; switching to \(device.name)")
+            setDefault(device)
         }
-
-        let appeared = devices.filter { !previousUIDs.contains($0.uid) && rank($0.uid) != Int.max }
-        guard appeared.count == 1, let candidate = appeared.first, let defaultUID,
-              rank(candidate.uid) < rank(defaultUID)
-        else { return }
-        Self.logger.info("Higher-priority device connected; switching to \(candidate.name)")
-        setDefault(candidate)
     }
 
     /// Records that the current default output is in use. Writes are throttled
