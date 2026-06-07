@@ -4,7 +4,7 @@
 
 A macOS menu bar app for audio output switching and per-app volume. Switch the output device in one click, connect Bluetooth headphones, set a separate volume for every app, and play audio to several devices at once. Site: [fader.pantafive.dev](https://fader.pantafive.dev).
 
-<p align="center"><img src="docs/screenshot.png" alt="Fader popover under the menu bar: output devices, Bluetooth section, per-app volume faders"></p>
+<p align="center"><img src="docs/hero.png" alt="Three Fader popovers: multi-output with per-device sliders, the output tab with devices and per-app volume, and the input tab with microphone selection"></p>
 
 No telemetry, no analytics. Per-app volume is processed on-device through Core Audio process taps (an API added in macOS 14.4), so there is no kernel extension and no virtual audio driver to install. Requires macOS 15+ on Apple silicon.
 
