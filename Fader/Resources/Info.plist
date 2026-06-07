@@ -30,6 +30,8 @@
 	<string>Fader connects and disconnects your paired Bluetooth headphones.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 pantafive. MIT License.</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/pantafive/fader/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

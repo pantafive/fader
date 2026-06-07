@@ -10,5 +10,10 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>dev.pantafive.fader-spks</string>
+		<string>dev.pantafive.fader-spki</string>
+	</array>
 </dict>
 </plist>

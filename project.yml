@@ -52,6 +52,13 @@ targets:
         com.apple.security.device.audio-input: true
         com.apple.security.device.bluetooth: true
         com.apple.security.network.client: true
+        # Sparkle's sandboxed-install path: the app talks to its Installer
+        # XPC service over these mach names. Literal bundle id, not
+        # $(PRODUCT_BUNDLE_IDENTIFIER) — release.yml re-signs with raw
+        # codesign, which does not expand build settings.
+        com.apple.security.temporary-exception.mach-lookup.global-name:
+          - dev.pantafive.fader-spks
+          - dev.pantafive.fader-spki
 
   # Hostless unit tests: pure-logic sources are compiled into the bundle
   # directly, so no app process needs to launch (LSUIElement hosts hang
