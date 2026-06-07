@@ -35,10 +35,19 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
+      # Hook environments (go/node builds) are expensive on macOS runners.
+      - name: Cache pre-commit environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # The same suite developers run locally; swiftformat/swiftlint binaries
+      # come sha-verified from install-ci-tools.sh.
       - name: Lint
         run: |
-          swiftformat --lint .
-          swiftlint --strict
+          pipx install pre-commit==4.6.0
+          pre-commit run --all-files --show-diff-on-failure
 
       - name: Build and test
         run: |

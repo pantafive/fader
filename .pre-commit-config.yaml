@@ -18,7 +18,9 @@ repos:
       - id: swiftformat
         name: SwiftFormat
         language: system
-        entry: swiftformat --lint
+        # Fixer, not linter: rewrites the files and fails the run, like the
+        # pre-commit-hooks fixers above.
+        entry: swiftformat
         types: [swift]
       - id: swiftlint
         name: SwiftLint

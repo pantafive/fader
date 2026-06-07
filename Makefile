@@ -16,7 +16,7 @@ else
 SIGN_FLAGS := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=$(SIGN_ID)
 endif
 
-.PHONY: gen build test lint format run clean icon og menubar-icon favicon
+.PHONY: gen build test lint run clean icon og menubar-icon favicon
 
 gen:
 	xcodegen generate
@@ -29,12 +29,10 @@ test: gen
 	xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Debug \
 		CODE_SIGNING_ALLOWED=NO test
 
+# All linters and formatters live in .pre-commit-config.yaml; this is the
+# same suite the commit hook and CI run.
 lint:
-	swiftformat --lint .
-	swiftlint --strict
-
-format:
-	swiftformat .
+	pre-commit run --all-files
 
 run: build
 	open "$$(xcodebuild -project $(XCODEPROJ) -scheme $(SCHEME) -configuration Debug \
