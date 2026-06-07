@@ -14,7 +14,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: 0.10.0
+    MARKETING_VERSION: 0.11.0
     # Sparkle compares CFBundleVersion, not the marketing string — tying them
     # together means the CI's MARKETING_VERSION override feeds both, and a
     # static build number can never silently disable updates.
