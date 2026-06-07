@@ -16,11 +16,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct FaderApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var engine: MixerEngine
-    @State private var statusMenu = StatusItemMenuController()
+    @State private var updater: UpdateController
+    @State private var statusMenu: StatusItemMenuController
 
     init() {
         let engine = MixerEngine()
+        let updater = UpdateController()
+        let statusMenu = StatusItemMenuController(updater: updater)
         _engine = State(initialValue: engine)
+        _updater = State(initialValue: updater)
+        _statusMenu = State(initialValue: statusMenu)
         AppDelegate.engine = engine
         statusMenu.install()
         // The detached probe gates engine.start(): the first HAL contact
@@ -48,6 +53,7 @@ struct FaderApp: App {
         MenuBarExtra {
             MixerView()
                 .environment(engine)
+                .environment(updater)
         } label: {
             Image(nsImage: Self.menuBarIcon)
         }

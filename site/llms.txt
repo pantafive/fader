@@ -1,6 +1,6 @@
 # Fader
 
-> Fader is a free, open-source macOS menu bar app for audio control: switch the output device with one click, connect paired Bluetooth headphones, set a separate volume for every running app, and play audio to several devices at once with a volume slider per device. It uses Core Audio process taps (an API introduced in macOS 14.4; Fader itself supports macOS 15+), needs no kernel extension or virtual driver, and has no telemetry or network access.
+> Fader is a free, open-source macOS menu bar app for audio control: switch the output device with one click, connect paired Bluetooth headphones, set a separate volume for every running app, and play audio to several devices at once with a volume slider per device. It uses Core Audio process taps (an API introduced in macOS 14.4; Fader itself supports macOS 15+), needs no kernel extension or virtual driver, and has no telemetry; its only network call is an update check against GitHub releases.
 
 Key facts: requires macOS 15+, Apple silicon; MIT license; install via `brew install --cask pantafive/tap/fader` or the notarized dmg.
 

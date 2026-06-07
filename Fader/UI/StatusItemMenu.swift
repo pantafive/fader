@@ -8,6 +8,11 @@ import ServiceManagement
 @MainActor
 final class StatusItemMenuController: NSObject {
     private var monitor: Any?
+    private let updater: UpdateController
+
+    init(updater: UpdateController) {
+        self.updater = updater
+    }
 
     func install() {
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
@@ -41,8 +46,18 @@ final class StatusItemMenuController: NSObject {
 
         menu.addItem(.separator())
 
-        // The "online" items below open the browser — the app itself stays
-        // network-free.
+        let checkTitle = updater.availableVersion.map { "Update to \($0)…" } ?? "Check for Updates…"
+        let check = NSMenuItem(title: checkTitle, action: #selector(checkForUpdates), keyEquivalent: "")
+        check.target = self
+        menu.addItem(check)
+
+        let autoCheck = NSMenuItem(title: "Check Automatically", action: #selector(toggleAutoCheck), keyEquivalent: "")
+        autoCheck.target = self
+        autoCheck.state = updater.automaticallyChecksForUpdates ? .on : .off
+        menu.addItem(autoCheck)
+
+        menu.addItem(.separator())
+
         let site = NSMenuItem(title: "Visit Website", action: #selector(visitWebsite), keyEquivalent: "")
         site.target = self
         menu.addItem(site)
@@ -70,6 +85,14 @@ final class StatusItemMenuController: NSObject {
         } catch {
             // The next menu open re-reads the real status; nothing to undo.
         }
+    }
+
+    @objc private func checkForUpdates() {
+        updater.checkForUpdates()
+    }
+
+    @objc private func toggleAutoCheck() {
+        updater.automaticallyChecksForUpdates.toggle()
     }
 
     @objc private func visitWebsite() {

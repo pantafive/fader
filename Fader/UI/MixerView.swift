@@ -6,6 +6,7 @@ import SwiftUI
 /// which way the audio flows.
 struct MixerView: View {
     @Environment(MixerEngine.self) private var engine
+    @Environment(UpdateController.self) private var updater
 
     @State private var direction: AudioDirection = .output
     /// Frame of the active-outputs zone in global coordinates — the drop
@@ -54,6 +55,11 @@ struct MixerView: View {
                 recordingAppsSection
             } else {
                 appsSection
+            }
+
+            if let version = updater.availableVersion {
+                Divider()
+                UpdateBanner(version: version)
             }
         }
         .padding(12)
