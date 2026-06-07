@@ -13,6 +13,15 @@ SWIFTFORMAT_SHA256=b990400779aceb7d7020796eb9ba814d4480543f671d38fc0ff48cb72f04c
 SPARKLE_VERSION=2.9.2
 SPARKLE_SHA256=1cb340cbbef04c6c0d162078610c25e2221031d794a3449d89f2f56f4df77c95
 
+# A project.yml-only Sparkle bump would ship a framework newer than the
+# sign_update CLI with no error anywhere — refuse to drift.
+PROJECT_YML="$(cd "$(dirname "$0")/.." && pwd)/project.yml"
+PROJECT_SPARKLE=$(awk '$1 == "exactVersion:" {print $2; exit}' "$PROJECT_YML")
+if [[ "$PROJECT_SPARKLE" != "$SPARKLE_VERSION" ]]; then
+    echo "Sparkle pin mismatch: project.yml has ${PROJECT_SPARKLE:-none}, install-ci-tools.sh has $SPARKLE_VERSION" >&2
+    exit 1
+fi
+
 DEST="${RUNNER_TEMP:-/tmp}/ci-tools"
 WORK=$(mktemp -d)
 mkdir -p "$DEST/bin"

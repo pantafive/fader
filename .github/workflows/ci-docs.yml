@@ -1,0 +1,21 @@
+name: CI (docs)
+
+# Branch protection requires the build-and-test check, but ci.yml skips
+# docs/site-only changes — GitHub then holds such a PR on a check that never
+# runs. This mirror reports the same check name and always passes. Its
+# `paths` MUST stay identical to ci.yml's `paths-ignore`.
+
+on:
+  pull_request:
+    paths:
+      - "site/**"
+      - "**.md"
+      - ".github/workflows/site.yml"
+
+permissions: {}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Docs/site-only change — nothing to build."

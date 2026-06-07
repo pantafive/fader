@@ -21,6 +21,27 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      # An unvalidated tag flows straight into CFBundleVersion and becomes
+      # /releases/latest for every Sparkle client: a pre-release suffix breaks
+      # the version comparator, and an old version would repoint the appcast
+      # at a downgrade — the /latest redirect resolves by publish date, not
+      # semver. Same-version re-runs stay allowed (idempotent heal).
+      - name: Validate release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not vX.Y.Z; refusing to release it" >&2
+            exit 1
+          fi
+          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          LATEST=${LATEST#v}
+          if [ -n "$LATEST" ] && [ "$(printf '%s\n%s\n' "$LATEST" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]; then
+            echo "Tag v$VERSION is not above the latest release v$LATEST" >&2
+            exit 1
+          fi
+
       - name: Install pinned tools
         run: ./scripts/install-ci-tools.sh
 
@@ -87,7 +108,11 @@ jobs:
       # helpers, exactly the layer the re-sign step exists for.
       - name: Verify strip and signature
         run: |
+          # Without pipefail a failed nm reads as 0 symbols and the check
+          # passes vacuously; assert the binary exists for a clear message.
+          set -o pipefail
           BIN=build/Build/Products/Release/Fader.app/Contents/MacOS/Fader
+          [ -f "$BIN" ] || { echo "App binary missing at $BIN" >&2; exit 1; }
           DEFINED=$(nm -U "$BIN" | wc -l | tr -d ' ')
           if [ "$DEFINED" -gt 5 ]; then
             echo "Binary not stripped: $DEFINED defined symbols" >&2
@@ -103,33 +128,44 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
+          set -o pipefail
           VERSION=${GITHUB_REF_NAME#v}
           APP=build/Build/Products/Release/Fader.app
           mkdir -p dist/dmg
+
+          # The shipped binary is stripped; the dSYM is the only way to
+          # symbolicate user crash logs. Package it first — a missing dSYM
+          # must fail the job before the notarization round-trips are spent.
+          ditto -c -k --keepParent build/Build/Products/Release/Fader.app.dSYM \
+            "dist/Fader-$VERSION-dSYM.zip"
 
           # One short-lived store-credentials call instead of ps-visible
           # passwords on each long notarytool --wait invocation.
           xcrun notarytool store-credentials fader-ci --keychain "$KEYCHAIN" \
             --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD" --no-validate
 
+          # `submit --wait` exits 0 even when the verdict is Invalid — only
+          # the later staple would fail, confusingly. Assert the verdict
+          # (case-insensitive on purpose: a string miss here would fail
+          # Accepted releases; verify against real output on the next one).
+          notarize() {
+            xcrun notarytool submit "$1" \
+              --keychain "$KEYCHAIN" --keychain-profile fader-ci --wait \
+              | tee "$RUNNER_TEMP/notary.log"
+            grep -qi "accepted" "$RUNNER_TEMP/notary.log"
+          }
+
           ditto -c -k --keepParent "$APP" dist/Fader.zip
-          xcrun notarytool submit dist/Fader.zip \
-            --keychain "$KEYCHAIN" --keychain-profile fader-ci --wait
+          notarize dist/Fader.zip
           xcrun stapler staple "$APP"
           rm dist/Fader.zip
 
           cp -R "$APP" dist/dmg/
           ln -s /Applications dist/dmg/Applications
           hdiutil create -volname "Fader" -srcfolder dist/dmg -ov -format UDZO "dist/Fader.dmg"
-          xcrun notarytool submit "dist/Fader.dmg" \
-            --keychain "$KEYCHAIN" --keychain-profile fader-ci --wait
+          notarize "dist/Fader.dmg"
           xcrun stapler staple "dist/Fader.dmg"
           cp "dist/Fader.dmg" "dist/Fader-$VERSION.dmg"
-
-          # The shipped binary is stripped; the dSYM is the only way to
-          # symbolicate user crash logs. Publish it next to the dmg.
-          ditto -c -k --keepParent build/Build/Products/Release/Fader.app.dSYM \
-            "dist/Fader-$VERSION-dSYM.zip"
 
       # Must run after stapling — the ticket changes the dmg's bytes, and the
       # EdDSA signature covers them. The feed URL in Info.plist is the stable
