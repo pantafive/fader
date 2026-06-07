@@ -47,10 +47,13 @@ struct ActiveOutputsSection: View {
     private func activeRow(_ row: Row) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Image(systemName: row.device.symbolName)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 18)
+                Image(systemName: row.device.symbolName(
+                    direction: .output,
+                    bluetoothPeer: engine.bluetoothPeer(for: row.device)
+                ))
+                .font(.system(size: 13))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18)
                 Text(row.device.name)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)

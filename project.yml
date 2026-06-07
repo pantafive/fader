@@ -61,6 +61,9 @@ targets:
       - Fader/Audio/VolumeStore.swift
       - Fader/Audio/DeviceUsageStore.swift
       - Fader/Audio/DevicePriorityStore.swift
+      - Fader/Audio/DeviceSymbol.swift
+      # AudioDirection only; nothing in the tests touches the HAL.
+      - Fader/Audio/HALProperty.swift
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true

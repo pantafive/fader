@@ -9,6 +9,13 @@ struct BluetoothAudioDevice: Identifiable, Hashable {
     let id: String
     let name: String
     let isConnected: Bool
+    /// Minor class of the audio major (headphones vs. loudspeaker), 0 when
+    /// the manufacturer didn't bother.
+    let minorClass: UInt32
+
+    var symbolName: String {
+        DeviceSymbol.bluetooth(name: name, minorClass: minorClass)
+    }
 }
 
 /// Lists paired Bluetooth audio devices and connects or disconnects them.
@@ -17,7 +24,7 @@ struct BluetoothAudioDevice: Identifiable, Hashable {
 @MainActor
 @Observable
 final class BluetoothAudioMonitor {
-    private static let logger = Logger(subsystem: "dev.pantafive.fader", category: "BluetoothAudioMonitor")
+    private nonisolated static let logger = Logger(subsystem: "dev.pantafive.fader", category: "BluetoothAudioMonitor")
 
     private(set) var paired: [BluetoothAudioDevice] = []
     /// Addresses with a connect/disconnect operation in flight.
@@ -47,10 +54,12 @@ final class BluetoothAudioMonitor {
                 guard let address = device.addressString else { return nil }
                 // Major device class 0x04 = audio (headphones, speakers, headsets).
                 guard device.deviceClassMajor == kBluetoothDeviceClassMajorAudio else { return nil }
+                Self.logger.debug("Paired \(device.name ?? address): minor class \(device.deviceClassMinor)")
                 return BluetoothAudioDevice(
                     id: address,
                     name: device.name ?? address,
-                    isConnected: device.isConnected()
+                    isConnected: device.isConnected(),
+                    minorClass: UInt32(device.deviceClassMinor)
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

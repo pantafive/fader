@@ -73,6 +73,11 @@ final class MixerEngine {
         apply(entry, to: app)
     }
 
+    /// Paired IOBluetooth peer of a HAL device, when one matches by MAC.
+    func bluetoothPeer(for device: AudioDevice) -> BluetoothAudioDevice? {
+        bluetooth.paired.first { device.matches(bluetoothID: $0.id) }
+    }
+
     /// Connects Bluetooth headphones and routes output to them once CoreAudio
     /// picks the device up.
     func connectBluetooth(_ device: BluetoothAudioDevice) {

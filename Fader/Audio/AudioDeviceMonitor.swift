@@ -8,6 +8,12 @@ struct AudioDevice: Identifiable, Hashable {
     let uid: String
     let name: String
     let transport: UInt32
+    /// Per-scope data sources ('hdpn', 'ispk', 'imic', …), 0 when absent.
+    /// Read at construction; on Apple Silicon plug/unplug swaps the HAL
+    /// device itself, so the values can't go stale within one device's
+    /// lifetime.
+    let outputDataSource: UInt32
+    let inputDataSource: UInt32
 
     var isBluetooth: Bool {
         transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
@@ -19,22 +25,20 @@ struct AudioDevice: Identifiable, Hashable {
         uid.lowercased().hasPrefix(bluetoothID.lowercased())
     }
 
-    /// SF Symbol matching the device's transport type.
-    var symbolName: String {
-        switch transport {
-        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
-            "airpods.gen3"
-        case kAudioDeviceTransportTypeBuiltIn:
-            "laptopcomputer"
-        case kAudioDeviceTransportTypeUSB:
-            "cable.connector"
-        case kAudioDeviceTransportTypeDisplayPort, kAudioDeviceTransportTypeHDMI:
-            "display"
-        case kAudioDeviceTransportTypeAirPlay:
-            "airplay.audio"
-        default:
-            "hifispeaker"
+    /// SF Symbol for the row icon. The paired IOBluetooth peer, when one
+    /// matches by MAC, carries the minor class and the canonical name.
+    func symbolName(direction: AudioDirection, bluetoothPeer: BluetoothAudioDevice?) -> String {
+        if isBluetooth {
+            return DeviceSymbol.bluetooth(
+                name: bluetoothPeer?.name ?? name,
+                minorClass: bluetoothPeer?.minorClass ?? 0
+            )
         }
+        return DeviceSymbol.wired(
+            transport: transport,
+            dataSource: direction == .output ? outputDataSource : inputDataSource,
+            direction: direction
+        )
     }
 }
 
@@ -47,7 +51,12 @@ extension AudioDevice {
         else { return nil }
         var transport: UInt32 = 0
         try? id.read(kAudioDevicePropertyTransportType, into: &transport)
-        self.init(id: id, uid: uid, name: name, transport: transport)
+        var outputDataSource: UInt32 = 0
+        try? id.read(kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeOutput, into: &outputDataSource)
+        var inputDataSource: UInt32 = 0
+        try? id.read(kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeInput, into: &inputDataSource)
+        self.init(id: id, uid: uid, name: name, transport: transport,
+                  outputDataSource: outputDataSource, inputDataSource: inputDataSource)
     }
 }
 

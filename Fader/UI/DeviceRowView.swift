@@ -40,12 +40,12 @@ struct DeviceRowView: View {
     }
 
     private var bluetoothPeer: BluetoothAudioDevice? {
-        engine.bluetooth.paired.first { device.matches(bluetoothID: $0.id) }
+        engine.bluetoothPeer(for: device)
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: device.symbolName)
+            Image(systemName: device.symbolName(direction: monitor.direction, bluetoothPeer: bluetoothPeer))
                 .font(.system(size: 13))
                 .foregroundStyle(isActive ? Color.accentColor : .secondary)
                 .frame(width: 18)
@@ -173,7 +173,7 @@ struct BluetoothRowView: View {
             engine.connectBluetooth(device)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "headphones")
+                Image(systemName: device.symbolName)
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
                     .frame(width: 18)
