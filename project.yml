@@ -21,6 +21,8 @@ settings:
     CURRENT_PROJECT_VERSION: $(MARKETING_VERSION)
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: true
+    # The local-build marker script edits the built Info.plist.
+    ENABLE_USER_SCRIPT_SANDBOXING: false
     DEAD_CODE_STRIPPING: true
   configs:
     Release:
@@ -45,6 +47,29 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: Sparkle
+    # Local builds show "local" in the menu header instead of the release
+    # number they were forked from. Stamps only the display string — the
+    # numeric CFBundleVersion stays, so Sparkle's comparison is untouched.
+    # CI (GitHub Actions sets CI=true) is left alone.
+    postBuildScripts:
+      - name: Mark local build
+        # Same path as input and output marks this a mutation of the built
+        # plist: ordered after Info.plist processing, before code signing.
+        # Either alone breaks — input-only let the stamp land post-signing
+        # (invalid seal), output-only let plist processing overwrite it.
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+          # A mutating task must also produce a non-mutable node, or the
+          # build graph rejects it ("no other virtual output node").
+          - $(DERIVED_FILE_DIR)/local-build-mark
+        script: |
+          if [ "${CI:-}" != "true" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString local" \
+              "$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          fi
+          touch "$DERIVED_FILE_DIR/local-build-mark"
     entitlements:
       path: Fader/Resources/Fader.entitlements
       properties:
