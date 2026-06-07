@@ -33,6 +33,9 @@ final class StatusItemMenuController: NSObject {
 
         let menu = NSMenu()
         menu.autoenablesItems = false
+        // The status bar window is pinned dark; without this the menu
+        // inherits that and ignores the system theme.
+        menu.appearance = NSApp.effectiveAppearance
 
         let header = NSMenuItem(title: "Fader \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
         header.isEnabled = false
