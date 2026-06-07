@@ -63,6 +63,7 @@ targets:
       - Fader/Audio/VolumeStore.swift
       - Fader/Audio/DeviceUsageStore.swift
       - Fader/Audio/DevicePriorityStore.swift
+      - Fader/Audio/JSONDefaults.swift
       - Fader/Audio/DeviceSymbol.swift
       - Fader/Audio/AudioDevice.swift
       - Fader/Audio/DevicePriorityPolicy.swift

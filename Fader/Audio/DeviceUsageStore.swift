@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// Last time each output device was the system default, keyed by device UID.
 /// Persisted as a single JSON blob in UserDefaults; entries past the retention
@@ -24,20 +23,10 @@ struct DeviceUsageStore {
     }
 
     func load() -> [String: Date] {
-        guard let data = defaults.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([String: Date].self, from: data)
-        else { return [:] }
-        return decoded
+        defaults.loadJSON([String: Date].self, forKey: key) ?? [:]
     }
 
     func save(_ usage: [String: Date], now: Date = Date()) {
-        let live = usage.filter { Self.isRecent($0.value, now: now) }
-        guard let data = try? JSONEncoder().encode(live) else {
-            // Practically unreachable for [String: Date]; don't fail silently.
-            Logger(subsystem: "dev.pantafive.fader", category: "DeviceUsageStore")
-                .error("Failed to encode device usage; not persisted")
-            return
-        }
-        defaults.set(data, forKey: key)
+        defaults.saveJSON(usage.filter { Self.isRecent($0.value, now: now) }, forKey: key)
     }
 }

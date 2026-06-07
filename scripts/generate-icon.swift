@@ -58,7 +58,6 @@ for fader in positions {
         width: knobRadius * 2,
         height: knobRadius * 2
     )
-    NSShadow().set()
     let shadow = NSShadow()
     shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
     shadow.shadowBlurRadius = 28

@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// User-defined output device priority, an ordered list of device UIDs.
 /// Position is set by drag-reordering the device list; earlier wins. Devices
@@ -34,19 +33,10 @@ struct DevicePriorityStore {
     }
 
     func load() -> [String] {
-        guard let data = defaults.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([String].self, from: data)
-        else { return [] }
-        return decoded
+        defaults.loadJSON([String].self, forKey: key) ?? []
     }
 
     func save(_ order: [String]) {
-        guard let data = try? JSONEncoder().encode(order) else {
-            // Practically unreachable for [String]; don't fail silently.
-            Logger(subsystem: "dev.pantafive.fader", category: "DevicePriorityStore")
-                .error("Failed to encode device priority; not persisted")
-            return
-        }
-        defaults.set(data, forKey: key)
+        defaults.saveJSON(order, forKey: key)
     }
 }

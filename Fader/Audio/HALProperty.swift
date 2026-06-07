@@ -4,6 +4,19 @@ import Foundation
 /// Thin throwing wrappers over the Core Audio HAL property API.
 enum HALError: Error {
     case osStatus(OSStatus, AudioObjectPropertySelector)
+    /// A non-property HAL call (tap, aggregate, IO-proc setup) failed.
+    case operation(OSStatus, String)
+}
+
+extension HALError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case let .osStatus(status, selector):
+            "HAL property \(selector) failed: OSStatus \(status)"
+        case let .operation(status, what):
+            "Failed to \(what): OSStatus \(status)"
+        }
+    }
 }
 
 /// Output vs. input side of the audio system. Everything device-related —

@@ -20,7 +20,9 @@ final class ProcessTap: @unchecked Sendable {
     /// Gain ramped towards `_volume` per frame to avoid clicks. RT thread only.
     private nonisolated(unsafe) var _currentGain: Float
     /// Per-frame ramp coefficient for ~30 ms exponential gain smoothing.
-    private nonisolated(unsafe) var _rampCoefficient: Float = 0.0007
+    /// Computed from the device sample rate in activate(); the render never
+    /// runs before that, so the placeholder is inert.
+    private nonisolated(unsafe) var _rampCoefficient: Float = 0
     /// The gain path assumes Float32 PCM. Verified at activation; on any other
     /// format the render falls back to bit-exact passthrough instead of
     /// reinterpreting foreign bytes as floats.
@@ -238,13 +240,9 @@ final class ProcessTap: @unchecked Sendable {
     }
 }
 
-/// Converts an OSStatus into a thrown error with context.
-func checked(_ status: OSStatus, _ what: @autoclosure () -> String) throws {
+/// Converts an OSStatus into a thrown HALError with context.
+private func checked(_ status: OSStatus, _ what: @autoclosure () -> String) throws {
     guard status == noErr else {
-        throw NSError(
-            domain: NSOSStatusErrorDomain,
-            code: Int(status),
-            userInfo: [NSLocalizedDescriptionKey: "Failed to \(what()): OSStatus \(status)"]
-        )
+        throw HALError.operation(status, what())
     }
 }

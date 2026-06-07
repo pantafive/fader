@@ -3,16 +3,16 @@ import Testing
 
 @Suite("VolumeStore")
 struct VolumeStoreTests {
-    private func makeStore() -> (VolumeStore, UserDefaults) {
+    private func makeStore() -> VolumeStore {
         let suite = "VolumeStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
-        return (VolumeStore(defaults: defaults), defaults)
+        return VolumeStore(defaults: defaults)
     }
 
     @Test("round-trips non-neutral entries")
     func roundTrip() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         let entries = [
             "com.example.loud": AppVolume(volume: 0.3, isMuted: false),
             "com.example.muted": AppVolume(volume: 1.0, isMuted: true),
@@ -23,7 +23,7 @@ struct VolumeStoreTests {
 
     @Test("drops neutral entries on save")
     func dropsNeutral() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         store.save([
             "com.example.neutral": AppVolume(volume: 1.0, isMuted: false),
             "com.example.quiet": AppVolume(volume: 0.5, isMuted: false),
@@ -35,7 +35,7 @@ struct VolumeStoreTests {
 
     @Test("empty defaults loads empty dictionary")
     func emptyLoad() {
-        let (store, _) = makeStore()
+        let store = makeStore()
         #expect(store.load().isEmpty)
     }
 }
