@@ -79,7 +79,10 @@ struct ActiveOutputsSection: View {
     }
 
     /// Mirrors the input tab's rule: a dead slider dims instead of snapping
-    /// back when the device exposes no settable volume.
+    /// back when the device exposes no settable volume — and says why, so the
+    /// greyed-out control reads as "this device runs its own volume" rather
+    /// than a broken slider promising control it doesn't have.
+    @ViewBuilder
     private func slider(for volume: any VolumeControlling) -> some View {
         ControlSlider(
             value: Binding(
@@ -92,6 +95,11 @@ struct ActiveOutputsSection: View {
         )
         .disabled(!volume.canSetVolume)
         .opacity(volume.canSetVolume ? 1.0 : 0.4)
+        if !volume.canSetVolume {
+            Text("Volume is controlled on the device")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private var fallbackRow: some View {

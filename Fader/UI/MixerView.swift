@@ -162,6 +162,11 @@ struct MixerView: View {
             )
             .disabled(!inputVolume.canSetVolume)
             .opacity(inputVolume.canSetVolume ? 1.0 : 0.4)
+            if !inputVolume.canSetVolume {
+                Text("Gain is controlled on the device")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
