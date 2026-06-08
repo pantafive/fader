@@ -38,6 +38,12 @@ final class ProcessTap: @unchecked Sendable {
 
     let processObjectIDs: [AudioObjectID]
 
+    /// UIDs of the output devices this tap's aggregate fans out to, clock
+    /// first. The aggregate pins them at activation, so a route or default
+    /// change is honoured by rebuilding the tap, not mutating it — this records
+    /// the current pins.
+    private(set) var activatedOutputUIDs: [String] = []
+
     var volume: Float {
         get { _volume }
         set { _volume = max(0, min(1, newValue)) }
@@ -55,10 +61,14 @@ final class ProcessTap: @unchecked Sendable {
         _currentGain = VolumeTaper.gain(position: volume)
     }
 
-    /// Builds the tap → aggregate → IO proc chain on the given output device.
+    /// Builds the tap → aggregate → IO proc chain. The first UID is the clock
+    /// (and main) sub-device; any others stack on with drift compensation, so
+    /// the app fans out to several devices at once.
     @MainActor
-    func activate(outputDeviceUID: String) throws {
+    func activate(outputDeviceUIDs: [String]) throws {
         guard !aggregateID.isValid else { return }
+        guard let clockUID = outputDeviceUIDs.first else { return }
+        activatedOutputUIDs = outputDeviceUIDs
 
         let description = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
         description.uuid = UUID()
@@ -70,20 +80,25 @@ final class ProcessTap: @unchecked Sendable {
         try checked(AudioHardwareCreateProcessTap(description, &tap), "create process tap")
         tapID = tap
 
-        let aggregateDescription: [String: Any] = [
+        var aggregateDescription: [String: Any] = [
             // The plumbing prefix keeps it out of AudioDeviceMonitor's list.
             kAudioAggregateDeviceNameKey: "\(AudioDevice.plumbingNamePrefix) aggregate #\(processObjectIDs.first ?? 0)",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceMainSubDeviceKey: outputDeviceUID,
-            kAudioAggregateDeviceClockDeviceKey: outputDeviceUID,
+            kAudioAggregateDeviceMainSubDeviceKey: clockUID,
+            kAudioAggregateDeviceClockDeviceKey: clockUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputDeviceUID]],
+            kAudioAggregateDeviceSubDeviceListKey: outputDeviceUIDs.map {
+                [kAudioSubDeviceUIDKey: $0, kAudioSubDeviceDriftCompensationKey: $0 != clockUID]
+            },
             kAudioAggregateDeviceTapListKey: [[
                 kAudioSubTapUIDKey: description.uuid.uuidString,
                 kAudioSubTapDriftCompensationKey: true,
             ]],
         ]
+        if outputDeviceUIDs.count > 1 {
+            aggregateDescription[kAudioAggregateDeviceIsStackedKey] = true
+        }
 
         var aggregate = AudioObjectID.unknown
         try checked(AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregate),

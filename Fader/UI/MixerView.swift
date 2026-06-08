@@ -13,6 +13,10 @@ struct MixerView: View {
     /// target for pairing a second output device.
     @State private var pairZoneFrame: CGRect = .null
     @State private var isPairTarget = false
+    /// App-row frames (bundleID → global) and the row a device is hovering —
+    /// the drop targets for routing an app to a non-default output device.
+    @State private var appRouteZones: [String: CGRect] = [:]
+    @State private var routeTargetBundleID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -28,10 +32,17 @@ struct MixerView: View {
                 if engine.isStarted, hasOutputListRows {
                     DeviceListSection(
                         monitor: engine.deviceMonitor,
-                        excludedUIDs: activeOutputUIDs,
+                        excludedUIDs: activeOutputUIDs.union(routedOutputUIDs),
                         pairZone: pairZoneFrame,
                         onPairHover: { isPairTarget = $0 },
-                        onPair: { engine.pair($0) }
+                        onPair: { engine.pair($0) },
+                        appZones: appRouteZones,
+                        onRouteHover: { routeTargetBundleID = $0 },
+                        onRoute: { bundleID, device in
+                            if let app = engine.processMonitor.apps.first(where: { $0.bundleID == bundleID }) {
+                                engine.route(app, to: device)
+                            }
+                        }
                     )
                 }
             } else {
@@ -65,6 +76,7 @@ struct MixerView: View {
         .padding(12)
         .frame(width: 320)
         .task { engine.bluetooth.refresh() }
+        .onPreferenceChange(AppRouteZonePreferenceKey.self) { appRouteZones = $0 }
     }
 
     /// Active outputs live in the zone above the list, not in the list:
@@ -77,8 +89,16 @@ struct MixerView: View {
         return Set(monitor.devices.filter { $0.id == monitor.defaultDeviceID }.map(\.uid))
     }
 
+    /// Devices a running app has pinned its audio to live on that app's row,
+    /// not in the picker — like paired outputs, a routed device leaves the
+    /// list so it reads as owned, not as another switchable default.
+    private var routedOutputUIDs: Set<String> {
+        Set(engine.processMonitor.apps.flatMap { engine.routeUIDs(for: $0) })
+    }
+
     private var hasOutputListRows: Bool {
-        engine.deviceMonitor.devices.contains { !activeOutputUIDs.contains($0.uid) }
+        let excluded = activeOutputUIDs.union(routedOutputUIDs)
+        return engine.deviceMonitor.devices.contains { !excluded.contains($0.uid) }
     }
 
     /// Full-width segmented switch — the native compact picker is a fiddly
@@ -124,16 +144,23 @@ struct MixerView: View {
 
     private var bluetoothSection: some View {
         VStack(alignment: .leading, spacing: DeviceListSection.rowSpacing) {
-            Text("Bluetooth")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
-                .padding(.horizontal, 8)
+            sectionLabel("Bluetooth")
             ForEach(disconnectedBluetooth) { device in
                 BluetoothRowView(device: device)
             }
         }
         .padding(.horizontal, -8)
+    }
+
+    /// Uppercase caps that label a free-floating list section (Bluetooth,
+    /// Apps). The output/input volume groups keep their bolder box titles —
+    /// a heading for a control group reads differently from a list label.
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .textCase(.uppercase)
+            .padding(.horizontal, 8)
     }
 
     private var inputVolumeSection: some View {
@@ -191,15 +218,30 @@ struct MixerView: View {
             // MenuBarExtra windows size to the content's ideal height, and a
             // ScrollView's ideal height is zero — give it an explicit one.
             let apps = mixerApps
-            ScrollView {
-                VStack(spacing: 12) {
-                    ForEach(apps) { app in
-                        AppRowView(app: app)
-                    }
-                }
-                .padding(.vertical, 2)
+            // Cap the viewport at six rows; routed rows carry an extra route
+            // line, so size to the visible slice's real heights, not a flat
+            // per-row constant.
+            let visible = apps.prefix(6)
+            // A routed app is taller — its header plus one slider per device —
+            // so sum each app's real height instead of a flat per-row constant.
+            let listHeight = visible.reduce(CGFloat(0)) { total, app in
+                let pins = engine.routeUIDs(for: app).count
+                return total + (pins == 0
+                    ? AppRowView.rowHeight
+                    : AppRowView.routedHeaderHeight + CGFloat(pins) * AppRowView.routeDeviceHeight)
             }
-            .frame(height: min(CGFloat(apps.count), 6) * AppRowView.rowHeight)
+            VStack(alignment: .leading, spacing: 6) {
+                sectionLabel("Apps")
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(apps) { app in
+                            AppRowView(app: app, isRouteTarget: routeTargetBundleID == app.bundleID)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(height: listHeight)
+            }
         }
     }
 

@@ -100,6 +100,9 @@ struct DeviceRowView: View {
             monitor.setDefault(device)
         }
         .gesture(reorderGesture)
+        // A reorderable row is grabbable — say so with the pointer, the only
+        // hint the drag gestures (reorder, pair, route) get before they start.
+        .pointerStyle(reorder != nil ? (isDraggingRow ? .grabActive : .grabIdle) : nil)
     }
 
     private var reorderGesture: some Gesture {

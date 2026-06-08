@@ -29,6 +29,9 @@ final class MixerEngine {
     private(set) var volumes: [String: AppVolume] = [:]
 
     @ObservationIgnored private var taps: [String: ProcessTap] = [:]
+    /// One volume control per pinned-and-present device, keyed by UID — each
+    /// routed output gets its own slider, like multi-output members.
+    @ObservationIgnored private var routeVolumes: [String: DeviceVolumeController] = [:]
     @ObservationIgnored private let store = VolumeStore()
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -48,7 +51,7 @@ final class MixerEngine {
         // Rebuild taps when the default output device changes — each aggregate
         // is pinned to a concrete device UID.
         deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
-            Task { @MainActor [weak self] in self?.rebuildAllTaps() }
+            Task { @MainActor [weak self] in self?.reconcileTapRouting() }
         }
 
         observeApps()
@@ -174,6 +177,7 @@ final class MixerEngine {
                 guard let self else { return }
                 self.refreshBluetoothSoon()
                 self.multiOutput.handleDevicesChanged(present: self.deviceMonitor.devices)
+                self.reconcileTapRouting()
                 self.observeDevices()
             }
         }
@@ -236,6 +240,22 @@ final class MixerEngine {
             guard taps[bundleID] == nil, let app = running[bundleID] else { continue }
             createTap(for: app, entry: entry)
         }
+        syncRouteVolumes()
+    }
+
+    /// Keeps one DeviceVolumeController alive per pinned-and-present device,
+    /// dropping controllers for devices no longer pinned or gone from the HAL.
+    /// Rebuilt whenever routes or the device list change.
+    private func syncRouteVolumes() {
+        let pinned = Set(volumes.values.flatMap(\.outputDeviceUIDs))
+            .filter { uid in deviceMonitor.devices.contains { $0.uid == uid } }
+        for uid in routeVolumes.keys where !pinned.contains(uid) {
+            routeVolumes[uid] = nil
+        }
+        for uid in pinned where routeVolumes[uid] == nil {
+            guard let device = deviceMonitor.devices.first(where: { $0.uid == uid }) else { continue }
+            routeVolumes[uid] = DeviceVolumeController(deviceID: device.id)
+        }
     }
 
     private func createTap(for app: AudioApp, entry: AppVolume) {
@@ -245,18 +265,26 @@ final class MixerEngine {
         // Saved volumes survive and re-apply once multi-output dissolves.
         guard !multiOutput.isActive else { return }
 
-        let outputUID: String
+        let outputUIDs: [String]
         do {
-            outputUID = try AudioObjectID.readDefaultOutputDevice().readDeviceUID()
+            outputUIDs = try resolvedOutputUIDs(for: entry)
         } catch {
             // Transient device churn (output switching), not a permission issue.
             Self.logger.error("Default device read failed: \(error.localizedDescription)")
             return
         }
 
+        // A routed app's loudness lives on its devices' own volume controls
+        // (one slider per pinned device), so its tap renders transparent — the
+        // app-level gain and mute apply only when it follows the default.
+        let routed = !entry.outputDeviceUIDs.isEmpty
         do {
-            let tap = ProcessTap(processObjectIDs: app.objectIDs, volume: entry.volume, isMuted: entry.isMuted)
-            try tap.activate(outputDeviceUID: outputUID)
+            let tap = ProcessTap(
+                processObjectIDs: app.objectIDs,
+                volume: routed ? 1.0 : entry.volume,
+                isMuted: routed ? false : entry.isMuted
+            )
+            try tap.activate(outputDeviceUIDs: outputUIDs)
             taps[app.bundleID] = tap
             needsAudioCapturePermission = false
         } catch {
@@ -266,12 +294,95 @@ final class MixerEngine {
         }
     }
 
-    private func rebuildAllTaps() {
-        let bundleIDs = Array(taps.keys)
-        for bundleID in bundleIDs {
-            taps[bundleID]?.invalidate()
+    /// The UID an app's tap should play through: its pinned route when that
+    /// device is present, otherwise the system default. A pinned-but-absent
+    /// device falls back to the default so the app stays audible until it
+    /// returns — the stored route survives for when it does.
+    private func resolvedOutputUIDs(for entry: AppVolume) throws -> [String] {
+        let present = entry.outputDeviceUIDs.compactMap { uid in
+            deviceMonitor.devices.first { $0.uid == uid }
+        }
+        // Clock leads: a Bluetooth clock drifts, so a wired/built-in member is
+        // preferred to drive the aggregate, mirroring multi-output.
+        guard let clock = MultiOutputPolicy.clock(among: present) else {
+            return try [AudioObjectID.readDefaultOutputDevice().readDeviceUID()]
+        }
+        return [clock.uid] + present.map(\.uid).filter { $0 != clock.uid }
+    }
+
+    /// Rebuilds only the taps whose target device no longer matches where they
+    /// play: a default switch moves the follow-default taps, a routed device
+    /// appearing or vanishing moves the pinned ones, and unrelated apps are left
+    /// untouched so they don't blip. One rule covers all three.
+    private func reconcileTapRouting() {
+        for (bundleID, tap) in taps {
+            guard let entry = volumes[bundleID],
+                  let desired = try? resolvedOutputUIDs(for: entry),
+                  desired != tap.activatedOutputUIDs else { continue }
+            tap.invalidate()
             taps[bundleID] = nil
         }
         syncTaps()
+    }
+
+    private func rebuildTap(for app: AudioApp, entry: AppVolume) {
+        if let tap = taps.removeValue(forKey: app.bundleID) {
+            tap.invalidate()
+        }
+        if !entry.isNeutral {
+            createTap(for: app, entry: entry)
+        }
+        syncRouteVolumes()
+    }
+}
+
+// MARK: - Per-app routing
+
+extension MixerEngine {
+    /// The UIDs an app is pinned to, present or not — drives the route chips.
+    func routeUIDs(for app: AudioApp) -> [String] {
+        volumes[app.bundleID]?.outputDeviceUIDs ?? []
+    }
+
+    /// Name of a pinned device by UID, when it is still present.
+    func routeDeviceName(forUID uid: String) -> String? {
+        deviceMonitor.devices.first { $0.uid == uid }?.name
+    }
+
+    /// The volume control backing a pinned device's own slider, if present.
+    func routeVolume(forUID uid: String) -> (any VolumeControlling)? {
+        routeVolumes[uid]
+    }
+
+    /// Pins an app's audio to another output device, on top of any already
+    /// pinned. Routing forces a tap even at unity gain (the tap IS the route),
+    /// so the tap is rebuilt to fan its aggregate out to the new device set.
+    func route(_ app: AudioApp, to device: AudioDevice) {
+        var entry = volumes[app.bundleID] ?? AppVolume()
+        guard !entry.outputDeviceUIDs.contains(device.uid) else { return }
+        entry.outputDeviceUIDs.append(device.uid)
+        volumes[app.bundleID] = entry
+        scheduleSave()
+        rebuildTap(for: app, entry: entry)
+    }
+
+    /// Drops one pinned device. The app keeps playing on whatever remains, and
+    /// returns to the default once the last pin is gone.
+    func unroute(_ app: AudioApp, from uid: String) {
+        guard var entry = volumes[app.bundleID], entry.outputDeviceUIDs.contains(uid) else { return }
+        entry.outputDeviceUIDs.removeAll { $0 == uid }
+        volumes[app.bundleID] = entry.isNeutral ? nil : entry
+        scheduleSave()
+        rebuildTap(for: app, entry: entry)
+    }
+
+    /// Clears every route, returning the app to the default output. Drops the
+    /// tap when nothing else (volume or mute) keeps the app non-neutral.
+    func clearRoute(for app: AudioApp) {
+        guard var entry = volumes[app.bundleID], !entry.outputDeviceUIDs.isEmpty else { return }
+        entry.outputDeviceUIDs.removeAll()
+        volumes[app.bundleID] = entry.isNeutral ? nil : entry
+        scheduleSave()
+        rebuildTap(for: app, entry: entry)
     }
 }

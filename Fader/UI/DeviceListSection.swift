@@ -13,11 +13,17 @@ struct DeviceListSection: View {
     var pairZone: CGRect = .null
     var onPairHover: ((Bool) -> Void)?
     var onPair: ((AudioDevice) -> Void)?
+    /// App rows (bundleID → global frame) a dragged device can drop onto to
+    /// route that app's audio there. Empty disables routing.
+    var appZones: [String: CGRect] = [:]
+    var onRouteHover: ((String?) -> Void)?
+    var onRoute: ((String, AudioDevice) -> Void)?
 
     /// Drag state: which row is in flight and how far it travelled.
     @State private var draggedUID: String?
     @State private var dragOffset: CGFloat = 0
     @State private var isOverPairZone = false
+    @State private var isOverRouteZone = false
 
     static let rowSpacing: CGFloat = 2
     /// Distance between row centers — the unit of drag math.
@@ -57,7 +63,7 @@ struct DeviceListSection: View {
     /// devices that can actually be demoted. While the cursor hovers the
     /// pair zone the row stays put — the drag is aiming elsewhere.
     private func dragTarget(from: Int, main: [AudioDevice]) -> Int {
-        guard !isOverPairZone else { return from }
+        guard !isOverPairZone, !isOverRouteZone else { return from }
         let delta = Int((dragOffset / Self.rowPitch).rounded())
         let canDemote = !main[from].isBluetooth && monitor.defaultDeviceID != main[from].id
         return min(max(from + delta, 0), canDemote ? main.count : main.count - 1)
@@ -91,18 +97,30 @@ struct DeviceListSection: View {
                 isOverPairZone = over
                 onPairHover?(over)
             }
+            // Pairing wins over routing where the zones could ever overlap.
+            let routeHit = over ? nil : appZones.first { $0.value.contains(location) }?.key
+            if (routeHit != nil) != isOverRouteZone {
+                isOverRouteZone = routeHit != nil
+            }
+            onRouteHover?(routeHit)
         case let .finished(location):
             defer {
                 if isOverPairZone {
                     isOverPairZone = false
                     onPairHover?(false)
                 }
+                isOverRouteZone = false
+                onRouteHover?(nil)
                 draggedUID = nil
                 dragOffset = 0
             }
             guard main.indices.contains(index) else { return }
             if let onPair, pairZone.contains(location) {
                 onPair(main[index])
+                return
+            }
+            if let onRoute, let bundleID = appZones.first(where: { $0.value.contains(location) })?.key {
+                onRoute(bundleID, main[index])
                 return
             }
             let target = dragTarget(from: index, main: main)
