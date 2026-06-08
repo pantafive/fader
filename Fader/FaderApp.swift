@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !UpdateController.isRelaunchingForUpdate else { return }
+        Self.engine?.fadeOutAndStop()
         Self.engine?.multiOutput.shutdown()
     }
 }

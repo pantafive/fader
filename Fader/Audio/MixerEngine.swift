@@ -124,6 +124,32 @@ final class MixerEngine {
         }
     }
 
+    /// Smooths the volume jump when Fader exits. A tap mutes the app's native
+    /// output and re-renders it attenuated, so destroying the tap restores the
+    /// native output at full — an abrupt jump (and click) up from whatever
+    /// level the app was held at. There is no per-app system volume to keep,
+    /// so the app does return to full; ramping each tap to unity first and
+    /// letting the IO proc render the ramp means the native output un-mutes at
+    /// the level it is about to play, a smooth rise instead of a slam. Muted
+    /// taps render silence and can't fade audibly, so they restore as-is.
+    func fadeOutAndStop() {
+        let fading = taps.values.filter { !$0.isMuted && $0.volume < 0.999 }
+        if !fading.isEmpty {
+            for tap in fading {
+                tap.volume = 1.0
+            }
+            // ~5× the 30 ms gain ramp: long enough for the rendered level to
+            // reach unity before teardown un-mutes the native output. Blocking
+            // is fine here — this only runs from applicationWillTerminate, and
+            // the IO proc rendering the ramp lives on its own queue.
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        for tap in taps.values {
+            tap.invalidate()
+        }
+        taps.removeAll()
+    }
+
     // MARK: - Private
 
     private func observeApps() {
