@@ -103,6 +103,7 @@ targets:
       - Fader/Audio/AudioDevice.swift
       - Fader/Audio/DevicePriorityPolicy.swift
       - Fader/Audio/MultiOutputPolicy.swift
+      - Fader/Audio/VolumeTaper.swift
       # Property wrappers and AudioDirection; nothing in the tests touches
       # a live HAL.
       - Fader/Audio/HALProperty.swift

@@ -13,7 +13,10 @@ import os
 final class ProcessTap: @unchecked Sendable {
     private static let logger = Logger(subsystem: "dev.pantafive.fader", category: "ProcessTap")
 
-    /// Target gain, 0.0...1.0. Read by the RT thread every buffer.
+    /// Slider position, 0.0...1.0. Read by the RT thread every buffer and
+    /// run through `taperedGain` before it reaches the samples — the stored
+    /// value stays linear position so the UI and VolumeStore keep their
+    /// 0...1 semantics.
     private nonisolated(unsafe) var _volume: Float
     /// Mute flag. Read by the RT thread every buffer.
     private nonisolated(unsafe) var _isMuted: Bool
@@ -49,7 +52,7 @@ final class ProcessTap: @unchecked Sendable {
         self.processObjectIDs = processObjectIDs
         _volume = volume
         _isMuted = isMuted
-        _currentGain = volume
+        _currentGain = VolumeTaper.gain(position: volume)
     }
 
     /// Builds the tap → aggregate → IO proc chain on the given output device.
@@ -173,7 +176,7 @@ final class ProcessTap: @unchecked Sendable {
 
         let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         let outputs = UnsafeMutableAudioBufferListPointer(output)
-        let targetGain = _volume
+        let targetGain = VolumeTaper.gain(position: _volume)
         var gain = _currentGain
         let ramp = _rampCoefficient
 
