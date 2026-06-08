@@ -544,6 +544,32 @@
     font-weight: 600;
   }
   .mock .app .pct { margin-left: auto; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  /* A pinned app drops its own slider for an accent card: each device it
+     plays to, with its own volume slider — like the real popover. */
+  .mock .app-routes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: -2px 4px 12px;
+    padding: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border-radius: 10px;
+  }
+  .mock .route-dev { display: flex; flex-direction: column; gap: 6px; }
+  .mock .route-head {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .mock .route-head .x { margin-left: auto; cursor: pointer; opacity: 0.75; }
+  .mock .route-head .x:hover { opacity: 1; }
+  .mock .slider.route-slider { --fill: var(--accent); margin-bottom: 0; }
+  .mock .slider.route-slider span { color: rgba(255, 255, 255, 0.9); }
+  /* A device dragged over an app row highlights it as the routing target. */
+  .mock .app.route-target { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 6px; }
   .mock hr { border: none; border-top: 1px solid var(--m-hr); margin: 10px 0; }
   /* Feature stories — Apple product-page rhythm: eyebrow, big headline, copy */
   .feature {
@@ -722,8 +748,14 @@
           <div id="apps-out">
             <div class="app">&#127925; Music <span class="pct">100%</span></div>
             <div class="slider" data-app="music" data-vol-icon style="--v: 100%"><span>&#128266;</span></div>
-            <div class="app">&#127760; Safari <span class="pct">35%</span></div>
-            <div class="slider" data-app="safari" data-vol-icon style="--v: 35%"><span>&#128265;</span></div>
+            <div class="app">&#127760; Safari <span class="pct" style="display: none">35%</span></div>
+            <div class="app-routes">
+              <div class="route-dev" data-rdev="MacBook Speakers">
+                <div class="route-head">&#8627; MacBook Speakers<span class="x" title="Stop playing to this device">&#10005;</span></div>
+                <div class="slider route-slider" data-vol-icon style="--v: 60%"><span>&#128265;</span></div>
+              </div>
+            </div>
+            <div class="slider" data-app="safari" data-vol-icon style="--v: 35%; display: none"><span>&#128265;</span></div>
           </div>
           <div class="paused" id="apps-paused" hidden>Per-app volume is paused while playing to multiple outputs</div>
         </div>
@@ -778,6 +810,15 @@
     <div class="copy">
       <p>Every app that plays sound gets its own volume fader and a mute button. The levels persist across launches. Scroll the wheel or swipe the trackpad over any slider to adjust it without clicking.</p>
       <p>An app left at 100% and unmuted is touched by nothing: <strong>no tap, no processing, bit-perfect native playback</strong>. A tap exists only while a fader sits below full volume or the app is muted.</p>
+    </div>
+  </section>
+
+  <section class="feature reveal">
+    <p class="eyebrow">Per-app output</p>
+    <h2>Send an app to the outputs you choose.</h2>
+    <div class="copy">
+      <p>Drag output devices onto an app and it plays through all of them at once, each with its own volume slider, so the desk speakers and your headphones can carry one app at different levels while everything else stays on your main output. A pinned device leaves the picker, owned by that app; its ✕ hands it back.</p>
+      <p>Unplug a pinned device and the app drops it, returning to your default once the last one is gone, then re-pins it the moment it is back. Try it in the popover above — drag a device down onto an app to pin it, set each device's level, or click a ✕ to drop one.</p>
     </div>
   </section>
 
@@ -1047,10 +1088,14 @@
     // (the app excludes them the same way); disconnected Bluetooth waits in
     // the shared BLUETOOTH section and reconnects (routing there) on click.
     const syncRows = () => {
+      // Devices pinned to an app live on that app's row, gone from the picker.
+      const routed = isMulti() ? [] : [...document.querySelectorAll("#apps-out .route-dev")].map((c) => c.dataset.rdev);
       document.querySelectorAll("#mock [data-pane] .row[data-device]").forEach((row) => {
+        const out = row.closest("[data-pane]").dataset.pane === "out";
         const btOff = row.dataset.bt && !btConnected[row.dataset.bt];
-        const playing = row.closest("[data-pane]").dataset.pane === "out" && activeOut.includes(row.dataset.device);
-        row.style.display = btOff || playing ? "none" : "";
+        const playing = out && activeOut.includes(row.dataset.device);
+        const pinned = out && routed.includes(row.dataset.device);
+        row.style.display = btOff || playing || pinned ? "none" : "";
       });
       let anyDisconnected = false;
       document.querySelectorAll("#mock [data-connect]").forEach((row) => {
@@ -1082,6 +1127,75 @@
         ensureActiveIn();
       });
     });
+
+    // App rows by key, name line paired with its slider — the drop targets a
+    // dragged device lands on to route just that app.
+    const appRowByKey = {};
+    let lastAppName = null;
+    for (const child of document.getElementById("apps-out").children) {
+      if (child.classList.contains("app")) lastAppName = child;
+      else if (child.classList.contains("slider")) appRowByKey[child.dataset.app] = { name: lastAppName, slider: child };
+    }
+
+    // The head's ✕ drops just that device. When the last one goes the accent
+    // card is removed and the app's own slider returns — like the popover.
+    function wireRouteRemove(x) {
+      x.addEventListener("click", () => {
+        const dev = x.closest(".route-dev");
+        const card = dev.parentElement;
+        dev.remove();
+        if (!card.children.length) {
+          const appName = card.previousElementSibling;
+          const master = card.nextElementSibling;
+          if (master && master.classList.contains("slider")) master.style.display = "";
+          const pct = appName.querySelector(".pct");
+          if (pct) pct.style.display = "";
+          card.remove();
+        }
+        syncRows();
+      });
+    }
+    document.querySelectorAll("#mock .route-dev .x").forEach(wireRouteRemove);
+
+    // Pin an app to a device: a row with the device name and its own volume
+    // slider in the app's accent card, hiding the app's master slider.
+    const addRoute = (key, device) => {
+      const pair = appRowByKey[key];
+      if (!pair) return;
+      let card = pair.name.nextElementSibling;
+      if (!card || !card.classList.contains("app-routes")) {
+        card = document.createElement("div");
+        card.className = "app-routes";
+        pair.name.after(card);
+      }
+      if ([...card.children].some((d) => d.dataset.rdev === device)) return;
+      const dev = document.createElement("div");
+      dev.className = "route-dev";
+      dev.dataset.rdev = device;
+      const head = document.createElement("div");
+      head.className = "route-head";
+      head.append("↳ " + device);
+      const x = document.createElement("span");
+      x.className = "x";
+      x.title = "Stop playing to this device";
+      x.textContent = "✕";
+      head.append(x);
+      const slider = document.createElement("div");
+      slider.className = "slider route-slider";
+      slider.setAttribute("data-vol-icon", "");
+      slider.style.setProperty("--v", "70%");
+      const icon = document.createElement("span");
+      icon.textContent = "\u{1F50A}";
+      slider.append(icon);
+      dev.append(head, slider);
+      card.append(dev);
+      attachSlider(slider);
+      wireRouteRemove(x);
+      pair.slider.style.display = "none";
+      const pct = pair.name.querySelector(".pct");
+      if (pct) pct.style.display = "none";
+      syncRows(); // the pinned device leaves the list, now owned by the app
+    };
 
     document.querySelectorAll("#mock [data-connect]").forEach((row) => {
       row.addEventListener("click", () => {
@@ -1154,6 +1268,8 @@
         const grabOffset = startY - row.getBoundingClientRect().top;
         let dragging = false;
         let baseTop = 0;
+        let overApp = null;
+        let rowOrder = null;
         const within = (element, y) => {
           const r = element.getBoundingClientRect();
           return y >= r.top && y <= r.bottom;
@@ -1164,6 +1280,9 @@
             row.classList.add("dragging");
             mock.classList.add("drag-live");
             baseTop = row.getBoundingClientRect().top;
+            // Reaching an app to route means passing through the list; remember
+            // the order so a route drop can undo any reshuffle it caused.
+            rowOrder = [...row.parentElement.children].filter((c) => c.matches(".row[data-device]"));
           }
           if (!dragging) return;
           // confine the row to the span from the zone down to the group row
@@ -1178,13 +1297,31 @@
           if (canDemote(row)) {
             maxTop = Math.max(maxTop, rareToggle.getBoundingClientRect().top);
           }
+          // A device dropped onto an app below routes just that app there.
+          // Let the drag travel down to the apps and pick the one under the
+          // cursor; routing is off during multi-output, exactly like the app.
+          const appList = isMulti() ? [] : Object.entries(appRowByKey);
+          overApp = null;
+          if (appList.length) {
+            const appBottom = (pair) => {
+              const card = pair.name.nextElementSibling;
+              return (card?.classList.contains("app-routes") ? card : pair.slider).getBoundingClientRect().bottom;
+            };
+            maxTop = Math.max(maxTop, appList[appList.length - 1][1].name.getBoundingClientRect().top);
+            for (const [key, pair] of appList) {
+              const top = pair.name.getBoundingClientRect().top;
+              if (ev.clientY >= top && ev.clientY <= appBottom(pair)) overApp = { key, pair };
+            }
+          }
           const desiredTop = Math.min(Math.max(ev.clientY - grabOffset, minTop), maxTop);
           const center = desiredTop + row.offsetHeight / 2;
-          const overZone = within(zone, ev.clientY);
-          const overRare = within(rareToggle, ev.clientY) && canDemote(row);
+          const overZone = within(zone, ev.clientY) && !overApp;
+          const overRare = within(rareToggle, ev.clientY) && canDemote(row) && !overApp;
           zone.classList.toggle("drop-target", overZone);
           rareToggle.classList.toggle("drop-target", overRare);
-          if (!overZone && !overRare) {
+          for (const a of document.querySelectorAll("#apps-out .app.route-target")) a.classList.remove("route-target");
+          if (overApp) overApp.pair.name.classList.add("route-target");
+          if (!overZone && !overRare && !overApp) {
             for (const sib of row.parentElement.querySelectorAll(".row[data-device]")) {
               if (sib === row || sib.parentElement === rareFold) continue;
               const r = sib.getBoundingClientRect();
@@ -1211,7 +1348,11 @@
           zone.classList.remove("drop-target");
           row.dataset.dragged = "1"; // swallow the click that follows the drop
           setTimeout(() => delete row.dataset.dragged, 0); // …but only that one
-          if (ev.type === "pointerup" && within(zone, ev.clientY)) {
+          for (const a of document.querySelectorAll("#apps-out .app.route-target")) a.classList.remove("route-target");
+          if (ev.type === "pointerup" && overApp) {
+            addRoute(overApp.key, row.dataset.device); // pin this app to the device
+            rowOrder?.forEach((r) => row.parentElement.insertBefore(r, rareToggle)); // routing leaves the list order be
+          } else if (ev.type === "pointerup" && within(zone, ev.clientY)) {
             setOut([...activeOut, row.dataset.device]); // pair — play together
           } else if (ev.type === "pointerup" && within(rareToggle, ev.clientY) && canDemote(row)) {
             rareFold.append(row);

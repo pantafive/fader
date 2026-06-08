@@ -22,6 +22,7 @@ Or download [the latest dmg](https://github.com/pantafive/fader/releases/latest/
 - **Auto-switch** — drag rows to rank devices; Fader follows the best one present.
 - **Several outputs at once** — drag a device onto the Output section and both play together, each with its own slider.
 - **Per-app volume** — a fader and mute for every app that plays sound; levels persist. Apps at full volume play untouched, bit-perfect.
+- **Per-app output** — drag one or more devices onto an app to play it through exactly those outputs, each with its own volume; everything else stays on your main output.
 - **Microphone** — switch the default input, set gain, and see which apps are listening.
 - **In sync** — system volume follows the volume keys and Control Center; scrolling over any slider adjusts it.
 
