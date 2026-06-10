@@ -35,6 +35,21 @@ final class AudioDeviceMonitor {
         priorityStore = DevicePriorityStore(key: "devicePriority" + suffix)
     }
 
+    #if RENDER_SHOTS
+        /// Render harness only: publish a device list and default without any HAL
+        /// contact, so ImageRenderer can shoot deterministic screenshots.
+        /// `recentUIDs` get a fresh usage stamp so they stay out of the
+        /// "Rarely used" group; everything else collapses into it.
+        func seedForRender(devices: [AudioDevice], defaultDeviceID: AudioDeviceID, recentUIDs: Set<String> = []) {
+            self.devices = devices
+            self.defaultDeviceID = defaultDeviceID
+            let now = Date()
+            for uid in recentUIDs {
+                lastUsed[uid] = now
+            }
+        }
+    #endif
+
     func start() {
         lastUsed = usageStore.load()
         priority = priorityStore.load()

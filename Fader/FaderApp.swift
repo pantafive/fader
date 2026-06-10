@@ -10,6 +10,13 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak static var engine: MixerEngine?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        #if RENDER_SHOTS
+            // AppKit is fully up here — safe for ImageRenderer and icon lookups.
+            if RenderHarness.isActive { RenderHarness.runAndExit() }
+        #endif
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         guard !UpdateController.isRelaunchingForUpdate else { return }
         Self.engine?.fadeOutAndStop()
@@ -25,6 +32,18 @@ struct FaderApp: App {
     @State private var statusMenu: StatusItemMenuController
 
     init() {
+        #if RENDER_SHOTS
+            // Render mode skips the menu bar, the single-instance guard, and the
+            // HAL probe — applicationDidFinishLaunching shoots the screenshots and
+            // exits before any of that would matter.
+            if RenderHarness.isActive {
+                let updater = UpdateController()
+                _engine = State(initialValue: MixerEngine())
+                _updater = State(initialValue: updater)
+                _statusMenu = State(initialValue: StatusItemMenuController(updater: updater))
+                return
+            }
+        #endif
         Self.yieldToRunningInstance()
         let engine = MixerEngine()
         let updater = UpdateController()

@@ -30,6 +30,18 @@ final class SystemVolumeController {
         endpoint = VolumeEndpoint(deviceID: .unknown, scope: direction.scope)
     }
 
+    #if RENDER_SHOTS
+        /// Render harness only: publish slider state without a HAL device.
+        func seedForRender(volume: Float, isMuted: Bool, deviceName: String,
+                           canSetVolume: Bool = true, canMute: Bool = true) {
+            self.volume = volume
+            self.isMuted = isMuted
+            self.deviceName = deviceName
+            self.canSetVolume = canSetVolume
+            self.canMute = canMute
+        }
+    #endif
+
     func start() {
         defaultDeviceListener = AudioObjectID.system.listen(direction.defaultDeviceSelector) {
             Task { @MainActor [weak self] in self?.attachToDefaultDevice() }

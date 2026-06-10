@@ -190,6 +190,15 @@ struct BluetoothRowView: View {
         engine.bluetooth.busy.contains(device.id)
     }
 
+    /// Hover appearance, including the render harness's forced state — onHover
+    /// never fires under ImageRenderer, so a screenshot couldn't show it otherwise.
+    private var hovered: Bool {
+        #if RENDER_SHOTS
+            if RenderHarness.forcedHoverBluetoothID == device.id { return true }
+        #endif
+        return isHovering
+    }
+
     var body: some View {
         Button {
             engine.connectBluetooth(device)
@@ -207,7 +216,7 @@ struct BluetoothRowView: View {
                 if isBusy {
                     ProgressView()
                         .controlSize(.mini)
-                } else if isHovering {
+                } else if hovered {
                     Text("Connect")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.accentColor)
@@ -217,7 +226,7 @@ struct BluetoothRowView: View {
             .padding(.vertical, 6)
             .contentShape(RoundedRectangle(cornerRadius: 6))
             .background(
-                isHovering ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear),
+                hovered ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear),
                 in: RoundedRectangle(cornerRadius: 6)
             )
         }

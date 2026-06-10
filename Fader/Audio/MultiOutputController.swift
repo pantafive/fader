@@ -31,6 +31,14 @@ final class MultiOutputController {
     @ObservationIgnored private var aggregateID = AudioObjectID.unknown
     @ObservationIgnored private var defaultListener: HALListener?
 
+    #if RENDER_SHOTS
+        /// Render harness only: publish active members without creating an
+        /// aggregate, so the paired-state screenshot has no HAL contact.
+        func seedForRender(members: [Member]) {
+            self.members = members
+        }
+    #endif
+
     func start() {
         adoptOrDestroyLeftover()
         // Output switched elsewhere (Control Center, Sound settings, a device

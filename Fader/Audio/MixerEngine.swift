@@ -38,6 +38,18 @@ final class MixerEngine {
     @ObservationIgnored private var routingTask: Task<Void, Never>?
     @ObservationIgnored private var bluetoothRefreshTask: Task<Void, Never>?
 
+    #if RENDER_SHOTS
+        /// Render harness only: mark the engine started and publish per-app
+        /// volumes plus the per-device controllers backing routed-app sliders;
+        /// callers seed the child monitors directly. No HAL contact.
+        func seedForRender(volumes: [String: AppVolume],
+                           routeVolumes: [String: DeviceVolumeController] = [:]) {
+            self.volumes = volumes
+            self.routeVolumes = routeVolumes
+            isStarted = true
+        }
+    #endif
+
     func start() {
         volumes = store.load()
         processMonitor.start()

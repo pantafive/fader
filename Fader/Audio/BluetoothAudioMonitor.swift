@@ -34,8 +34,20 @@ final class BluetoothAudioMonitor {
     /// must not overwrite a fresher list.
     @ObservationIgnored private var refreshGeneration = 0
 
+    #if RENDER_SHOTS
+        /// Render harness only: publish a paired list without touching IOBluetooth.
+        func seedForRender(paired: [BluetoothAudioDevice]) {
+            self.paired = paired
+        }
+    #endif
+
     /// Enumerates off the main actor — IOBluetooth calls can block.
     func refresh() {
+        #if RENDER_SHOTS
+            // Screenshots must not touch the live system; IOBluetooth/CoreBluetooth
+            // access trips TCC and aborts the render process.
+            if RenderHarness.isActive { return }
+        #endif
         refreshGeneration += 1
         let generation = refreshGeneration
         Task.detached(priority: .userInitiated) {

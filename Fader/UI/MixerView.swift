@@ -13,6 +13,17 @@ struct MixerView: View {
     /// target for pairing a second output device.
     @State private var pairZoneFrame: CGRect = .null
     @State private var isPairTarget = false
+
+    #if RENDER_SHOTS
+        /// Render harness only: open straight onto a given tab with the
+        /// drag-to-pair overlay optionally lit, so each screenshot captures one
+        /// fixed UI state. The default arguments keep the production call sites
+        /// (`MixerView()`) unchanged.
+        init(initialDirection: AudioDirection = .output, pairTargeted: Bool = false) {
+            _direction = State(initialValue: initialDirection)
+            _isPairTarget = State(initialValue: pairTargeted)
+        }
+    #endif
     /// App-row frames (bundleID → global) and the row a device is hovering —
     /// the drop targets for routing an app to a non-default output device.
     @State private var appRouteZones: [String: CGRect] = [:]
@@ -230,17 +241,25 @@ struct MixerView: View {
                     ? AppRowView.rowHeight
                     : AppRowView.routedHeaderHeight + CGFloat(pins) * AppRowView.routeDeviceHeight)
             }
+            let rows = VStack(spacing: 8) {
+                ForEach(apps) { app in
+                    AppRowView(app: app, isRouteTarget: routeTargetBundleID == app.bundleID)
+                }
+            }
+            .padding(.vertical, 2)
             VStack(alignment: .leading, spacing: 6) {
                 sectionLabel("Apps")
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(apps) { app in
-                            AppRowView(app: app, isRouteTarget: routeTargetBundleID == app.bundleID)
-                        }
+                #if RENDER_SHOTS
+                    // ImageRenderer doesn't lay out ScrollView content; the render
+                    // harness seeds few enough apps that a flat list needs no scroll.
+                    if RenderHarness.isActive {
+                        rows
+                    } else {
+                        ScrollView { rows }.frame(height: listHeight)
                     }
-                    .padding(.vertical, 2)
-                }
-                .frame(height: listHeight)
+                #else
+                    ScrollView { rows }.frame(height: listHeight)
+                #endif
             }
         }
     }

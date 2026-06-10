@@ -96,6 +96,16 @@ final class DeviceVolumeController: VolumeControlling {
         readBack()
     }
 
+    #if RENDER_SHOTS
+        /// Render harness only: a controller with published volume but no HAL
+        /// device, listeners, or capability probe — the slider draws as live.
+        init(renderVolume: Float, isMuted: Bool = false) {
+            endpoint = VolumeEndpoint(deviceID: .unknown, scope: kAudioDevicePropertyScopeOutput)
+            volume = renderVolume
+            self.isMuted = isMuted
+        }
+    #endif
+
     func setVolume(_ value: Float) {
         if let applied = endpoint.writeVolume(value) {
             volume = applied

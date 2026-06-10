@@ -2,4 +2,4 @@
 # the centered README screenshot — keep the allowlist tight.
 MD013: false
 MD033:
-  allowed_elements: [p, img]
+  allowed_elements: [p, img, picture, source]

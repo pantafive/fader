@@ -15,3 +15,7 @@ DerivedData/
 *.cer
 *.provisionprofile
 .reviews/
+.internal/
+
+# Generated popover screenshots (make shots); promote chosen ones into docs/
+assets/screenshots/
