@@ -15,6 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // AppKit is fully up here — safe for ImageRenderer and icon lookups.
             if RenderHarness.isActive { RenderHarness.runAndExit() }
         #endif
+        // As an LSUIElement agent with no open window, RunningBoard rates the
+        // app's termination resistance at its lowest, so under disk pressure
+        // the cache-delete daemon evicts it (exit reason 0xBADDD15C) and the
+        // icon silently vanishes — it won't relaunch until next login. Raising
+        // resistance tells the system not to reclaim us first; it's a strong
+        // hint, not a guarantee under severe pressure.
+        ProcessInfo.processInfo.disableSuddenTermination()
+        ProcessInfo.processInfo.disableAutomaticTermination("Menu bar agent stays resident")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
