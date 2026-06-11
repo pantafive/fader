@@ -42,6 +42,13 @@ final class UpdateController {
     @ObservationIgnored private let bridge = SparkleBridge()
     @ObservationIgnored private var relaunchHandler: (() -> Void)?
 
+    // Event sources that re-open a quiet window for a held-back staged
+    // update. Armed only while one waits, torn down on relaunch.
+    @ObservationIgnored private var resignObserver: NSObjectProtocol?
+    @ObservationIgnored private var runningListener: HALListener?
+    @ObservationIgnored private var defaultDeviceListener: HALListener?
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
+
     init() {
         controller = SPUStandardUpdaterController(
             startingUpdater: false,
@@ -99,22 +106,90 @@ final class UpdateController {
         availableVersion = nil
     }
 
-    /// The update is downloaded and staged. Relaunch into it right away
-    /// while nobody is looking — app in the background, output device idle.
-    /// Otherwise surface "Restart to Update" and let the user pick the
-    /// moment; Sparkle installs on quit regardless.
+    /// The update is downloaded and staged. Install it the moment it would go
+    /// unnoticed — app in the background, output device idle. If that moment
+    /// isn't here yet, wait for it (see `armQuietRelaunch`) rather than
+    /// stranding the user on a manual click; the "Restart to Update" row and
+    /// install-on-quit remain as the backstop either way.
     fileprivate func updateStaged(version: String, relaunch: @escaping () -> Void) {
         Self.log.info("update staged: \(version, privacy: .public)")
         relaunchHandler = relaunch
         stagedVersion = version
-        if !NSApp.isActive, !Self.audioIsPlaying() {
-            self.relaunch()
+        if !tryQuietRelaunch() { armQuietRelaunch() }
+    }
+
+    /// Silently install the staged update iff nobody would notice. Returns
+    /// true once it commits to relaunching, so the caller knows to stop
+    /// waiting. A relaunch mid-playback would blip per-app taps to unity, so
+    /// the audio guard is non-negotiable.
+    @discardableResult
+    private func tryQuietRelaunch() -> Bool {
+        guard relaunchHandler != nil, !Self.isRelaunchingForUpdate else { return false }
+        guard !NSApp.isActive, !Self.audioIsPlaying() else { return false }
+        relaunch()
+        return true
+    }
+
+    /// The quiet moment wasn't here when the update staged. Re-check on the
+    /// two events that can open one — the app resigning active (popover
+    /// dismissed, user switched away) and the output device falling idle
+    /// (playback or a call ended) — for an instant reaction when they fire.
+    /// Those HAL/AppKit signals are unproven on this OS (the sibling
+    /// per-process running property is a documented non-deliverer), so a
+    /// low-frequency timer backs them so correctness never rests on them.
+    /// All three exist only while an update waits and die on relaunch —
+    /// nothing runs in steady state.
+    private func armQuietRelaunch() {
+        if resignObserver == nil {
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.tryQuietRelaunch() }
+            }
+        }
+        armRunningListener()
+        // The default output can switch while we wait; re-arm onto the new
+        // device and re-check — it may already be idle.
+        defaultDeviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
+            Task { @MainActor [weak self] in
+                self?.armRunningListener()
+                self?.tryQuietRelaunch()
+            }
+        }
+        if retryTask == nil {
+            retryTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(15))
+                    guard let self, !Task.isCancelled else { break }
+                    if tryQuietRelaunch() { break }
+                }
+            }
+        }
+    }
+
+    private func armRunningListener() {
+        runningListener = (try? AudioObjectID.readDefaultOutputDevice()).map { device in
+            device.listen(kAudioDevicePropertyDeviceIsRunningSomewhere) {
+                Task { @MainActor [weak self] in self?.tryQuietRelaunch() }
+            }
         }
     }
 
     private func relaunch() {
         Self.isRelaunchingForUpdate = true
+        teardownQuietWatch()
         relaunchHandler?()
+    }
+
+    private func teardownQuietWatch() {
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+            self.resignObserver = nil
+        }
+        runningListener = nil
+        defaultDeviceListener = nil
+        retryTask?.cancel()
+        retryTask = nil
     }
 
     private static func audioIsPlaying() -> Bool {
