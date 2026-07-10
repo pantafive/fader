@@ -277,9 +277,9 @@ final class MixerEngine {
         // Saved volumes survive and re-apply once multi-output dissolves.
         guard !multiOutput.isActive else { return }
 
-        let outputUIDs: [String]
+        let outputs: [ProcessTap.Output]
         do {
-            outputUIDs = try resolvedOutputUIDs(for: entry)
+            outputs = try resolvedOutputs(for: entry)
         } catch {
             // Transient device churn (output switching), not a permission issue.
             Self.logger.error("Default device read failed: \(error.localizedDescription)")
@@ -296,7 +296,7 @@ final class MixerEngine {
                 volume: routed ? 1.0 : entry.volume,
                 isMuted: routed ? false : entry.isMuted
             )
-            try tap.activate(outputDeviceUIDs: outputUIDs)
+            try tap.activate(outputs: outputs)
             taps[app.bundleID] = tap
             needsAudioCapturePermission = false
         } catch {
@@ -306,31 +306,31 @@ final class MixerEngine {
         }
     }
 
-    /// The UID an app's tap should play through: its pinned route when that
-    /// device is present, otherwise the system default. A pinned-but-absent
-    /// device falls back to the default so the app stays audible until it
-    /// returns — the stored route survives for when it does.
-    private func resolvedOutputUIDs(for entry: AppVolume) throws -> [String] {
-        let present = entry.outputDeviceUIDs.compactMap { uid in
-            deviceMonitor.devices.first { $0.uid == uid }
-        }
+    /// The devices an app's tap should play through: its pinned route when
+    /// present, otherwise the system default. A pinned-but-absent device falls
+    /// back to the default so the app stays audible until it returns — the
+    /// stored route survives for when it does.
+    private func resolvedOutputs(for entry: AppVolume) throws -> [ProcessTap.Output] {
+        let present = entry.outputDeviceUIDs.compactMap { uid in deviceMonitor.devices.first { $0.uid == uid } }
         // Clock leads: a Bluetooth clock drifts, so a wired/built-in member is
         // preferred to drive the aggregate, mirroring multi-output.
         guard let clock = MultiOutputPolicy.clock(among: present) else {
-            return try [AudioObjectID.readDefaultOutputDevice().readDeviceUID()]
+            let id = try AudioObjectID.readDefaultOutputDevice()
+            return try [ProcessTap.Output(uid: id.readDeviceUID(), id: id)]
         }
-        return [clock.uid] + present.map(\.uid).filter { $0 != clock.uid }
+        return ([clock] + present.filter { $0.uid != clock.uid })
+            .map { ProcessTap.Output(uid: $0.uid, id: $0.id) }
     }
 
-    /// Rebuilds only the taps whose target device no longer matches where they
-    /// play: a default switch moves the follow-default taps, a routed device
-    /// appearing or vanishing moves the pinned ones, and unrelated apps are left
-    /// untouched so they don't blip. One rule covers all three.
+    /// Rebuilds only the taps that no longer play where they should, so
+    /// unrelated apps don't blip. Stale = resolved targets changed (object IDs
+    /// too — devices re-publish under an old UID), aggregate died, or resolve
+    /// failed; a wedged tap keeps its app muted, dropping it un-mutes.
     private func reconcileTapRouting() {
         for (bundleID, tap) in taps {
-            guard let entry = volumes[bundleID],
-                  let desired = try? resolvedOutputUIDs(for: entry),
-                  desired != tap.activatedOutputUIDs else { continue }
+            guard let entry = volumes[bundleID] else { continue }
+            if let desired = try? resolvedOutputs(for: entry),
+               desired == tap.activatedOutputs, tap.isAlive { continue }
             tap.invalidate()
             taps[bundleID] = nil
         }

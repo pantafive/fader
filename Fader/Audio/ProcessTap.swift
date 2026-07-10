@@ -38,11 +38,20 @@ final class ProcessTap: @unchecked Sendable {
 
     let processObjectIDs: [AudioObjectID]
 
-    /// UIDs of the output devices this tap's aggregate fans out to, clock
-    /// first. The aggregate pins them at activation, so a route or default
-    /// change is honoured by rebuilding the tap, not mutating it — this records
-    /// the current pins.
-    private(set) var activatedOutputUIDs: [String] = []
+    /// A resolved output device: the UID names the aggregate's sub-device, the
+    /// object ID catches a device that died and re-published under the same
+    /// UID — the aggregate stays bound to the corpse and the tapped app would
+    /// otherwise sit muted with nobody re-rendering it.
+    struct Output: Equatable {
+        let uid: String
+        let id: AudioObjectID
+    }
+
+    /// The output devices this tap's aggregate fans out to, clock first. The
+    /// aggregate pins them at activation, so a route or default change is
+    /// honoured by rebuilding the tap, not mutating it — this records the
+    /// current pins.
+    private(set) var activatedOutputs: [Output] = []
 
     var volume: Float {
         get { _volume }
@@ -65,10 +74,10 @@ final class ProcessTap: @unchecked Sendable {
     /// (and main) sub-device; any others stack on with drift compensation, so
     /// the app fans out to several devices at once.
     @MainActor
-    func activate(outputDeviceUIDs: [String]) throws {
+    func activate(outputs: [Output]) throws {
         guard !aggregateID.isValid else { return }
-        guard let clockUID = outputDeviceUIDs.first else { return }
-        activatedOutputUIDs = outputDeviceUIDs
+        guard let clockUID = outputs.first?.uid else { return }
+        activatedOutputs = outputs
 
         let description = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
         description.uuid = UUID()
@@ -88,15 +97,15 @@ final class ProcessTap: @unchecked Sendable {
             kAudioAggregateDeviceClockDeviceKey: clockUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: outputDeviceUIDs.map {
-                [kAudioSubDeviceUIDKey: $0, kAudioSubDeviceDriftCompensationKey: $0 != clockUID]
+            kAudioAggregateDeviceSubDeviceListKey: outputs.map {
+                [kAudioSubDeviceUIDKey: $0.uid, kAudioSubDeviceDriftCompensationKey: $0.uid != clockUID]
             },
             kAudioAggregateDeviceTapListKey: [[
                 kAudioSubTapUIDKey: description.uuid.uuidString,
                 kAudioSubTapDriftCompensationKey: true,
             ]],
         ]
-        if outputDeviceUIDs.count > 1 {
+        if outputs.count > 1 {
             aggregateDescription[kAudioAggregateDeviceIsStackedKey] = true
         }
 
@@ -148,6 +157,17 @@ final class ProcessTap: @unchecked Sendable {
         }
     }
 
+    /// Whether the private aggregate still exists HAL-side. Device churn can
+    /// kill it under the tap; `.mutedWhenTapped` then leaves the app muted
+    /// with nobody re-rendering it, so a dead aggregate means rebuild now.
+    @MainActor
+    var isAlive: Bool {
+        guard aggregateID.isValid else { return false }
+        var alive: UInt32 = 0
+        guard (try? aggregateID.read(kAudioDevicePropertyDeviceIsAlive, into: &alive)) != nil else { return false }
+        return alive != 0
+    }
+
     /// Tears down in the HAL-required order: stop → IO proc → aggregate → tap.
     /// Releasing the tap restores the app's native output.
     @MainActor
@@ -197,35 +217,21 @@ final class ProcessTap: @unchecked Sendable {
 
         for (index, outBuffer) in outputs.enumerated() {
             guard let outData = outBuffer.mData else { continue }
-            let outSamples = outData.assumingMemoryBound(to: Float.self)
-            let outCount = Int(outBuffer.mDataByteSize) / MemoryLayout<Float>.size
-
             guard index < inputs.count, let inData = inputs[index].mData else {
                 memset(outData, 0, Int(outBuffer.mDataByteSize))
                 continue
             }
-            let inSamples = inData.assumingMemoryBound(to: Float.self)
-            let count = min(Int(inputs[index].mDataByteSize) / MemoryLayout<Float>.size, outCount)
-            let channels = max(1, Int(outBuffer.mNumberChannels))
-
             // One ramp shared across the buffer list; in practice taps deliver
             // a single interleaved buffer, so this is exact.
-            var frameGain = gain
-            for frame in stride(from: 0, to: count, by: channels) {
-                frameGain += (targetGain - frameGain) * ramp
-                for channel in 0 ..< channels where frame + channel < count {
-                    outSamples[frame + channel] = inSamples[frame + channel] * frameGain
-                }
-            }
-            // Snap once converged: stops the asymptotic tail (denormal-prone
-            // when ramping to 0 on non-Apple-silicon FPUs).
-            if abs(frameGain - targetGain) < 1e-6 {
-                frameGain = targetGain
-            }
-            gain = frameGain
-            if count < outCount {
-                memset(outSamples.advanced(by: count), 0, (outCount - count) * MemoryLayout<Float>.size)
-            }
+            gain = TapMix.mix(
+                input: inData.assumingMemoryBound(to: Float.self),
+                inputLayout: TapMix.Layout(channels: Int(inputs[index].mNumberChannels),
+                                           count: Int(inputs[index].mDataByteSize) / MemoryLayout<Float>.size),
+                output: outData.assumingMemoryBound(to: Float.self),
+                outputLayout: TapMix.Layout(channels: Int(outBuffer.mNumberChannels),
+                                            count: Int(outBuffer.mDataByteSize) / MemoryLayout<Float>.size),
+                gain: TapMix.Gain(current: gain, target: targetGain, ramp: ramp)
+            )
         }
         _currentGain = gain
     }
