@@ -36,7 +36,7 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["speakers", "headphones"],
             previousUIDs: ["speakers"],
-            priority: ["headphones", "speakers"],
+            ranking: DeviceRanking(order: ["headphones", "speakers"], armed: ["headphones", "speakers"]),
             previousDefaultUID: "speakers",
             currentDefaultUID: "speakers"
         )
@@ -49,7 +49,7 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["speakers", "headphones"],
             previousUIDs: ["speakers"],
-            priority: ["speakers", "headphones"],
+            ranking: DeviceRanking(order: ["speakers", "headphones"], armed: ["speakers", "headphones"]),
             previousDefaultUID: "speakers",
             currentDefaultUID: "speakers"
         )
@@ -62,7 +62,10 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["speakers", "headphones", "dock"],
             previousUIDs: ["speakers"],
-            priority: ["headphones", "dock", "speakers"],
+            ranking: DeviceRanking(
+                order: ["headphones", "dock", "speakers"],
+                armed: ["headphones", "dock", "speakers"]
+            ),
             previousDefaultUID: "speakers",
             currentDefaultUID: "speakers"
         )
@@ -75,7 +78,7 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["speakers", "stranger"],
             previousUIDs: ["speakers"],
-            priority: ["speakers"],
+            ranking: DeviceRanking(order: ["speakers"], armed: ["speakers"]),
             previousDefaultUID: "speakers",
             currentDefaultUID: "speakers"
         )
@@ -88,7 +91,7 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["speakers", "headphones"],
             previousUIDs: ["speakers"],
-            priority: ["headphones"],
+            ranking: DeviceRanking(order: ["headphones"], armed: ["headphones"]),
             previousDefaultUID: nil,
             currentDefaultUID: nil
         )
@@ -101,7 +104,10 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["dock", "speakers"],
             previousUIDs: ["headphones", "dock", "speakers"],
-            priority: ["headphones", "dock", "speakers"],
+            ranking: DeviceRanking(
+                order: ["headphones", "dock", "speakers"],
+                armed: ["headphones", "dock", "speakers"]
+            ),
             previousDefaultUID: "headphones",
             currentDefaultUID: "speakers"
         )
@@ -114,7 +120,10 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["dock", "speakers"],
             previousUIDs: ["headphones", "dock", "speakers"],
-            priority: ["headphones", "dock", "speakers"],
+            ranking: DeviceRanking(
+                order: ["headphones", "dock", "speakers"],
+                armed: ["headphones", "dock", "speakers"]
+            ),
             previousDefaultUID: "headphones",
             currentDefaultUID: "dock"
         )
@@ -127,7 +136,7 @@ struct AutoSwitchPolicyTests {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: ["stranger"],
             previousUIDs: ["headphones", "stranger"],
-            priority: ["headphones"],
+            ranking: DeviceRanking(order: ["headphones"], armed: ["headphones"]),
             previousDefaultUID: "headphones",
             currentDefaultUID: "stranger"
         )

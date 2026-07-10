@@ -20,8 +20,8 @@ final class AudioDeviceMonitor {
     // the main list and the rarely-used group.
     @ObservationIgnored private var lastUsed: [String: Date] = [:]
     @ObservationIgnored private let usageStore: DeviceUsageStore
-    // Not observed: every priority change re-sorts `devices`, which is.
-    @ObservationIgnored private var priority: [String] = []
+    /// Not observed: every ranking change re-sorts `devices`, which is.
+    @ObservationIgnored private var ranking = DeviceRanking()
     @ObservationIgnored private let priorityStore: DevicePriorityStore
     /// Auto-switch needs a populated baseline — at startup every device
     /// "appears" at once and none of that is a hotplug event.
@@ -52,7 +52,7 @@ final class AudioDeviceMonitor {
 
     func start() {
         lastUsed = usageStore.load()
-        priority = priorityStore.load()
+        ranking = DeviceRanking(order: priorityStore.load(), armed: priorityStore.loadArmed())
         listeners = [
             AudioObjectID.system.listen(kAudioHardwarePropertyDevices) {
                 Task { @MainActor [weak self] in self?.refresh() }
@@ -83,10 +83,13 @@ final class AudioDeviceMonitor {
     }
 
     /// Persists the new order of the visible rows as the device priority and
-    /// re-sorts the list. Hidden devices keep their rank (see merge).
-    func applyOrder(_ visibleUIDs: [String]) {
-        priority = DevicePriorityStore.merge(stored: priority, visible: visibleUIDs)
-        priorityStore.save(priority)
+    /// re-sorts the list. Hidden devices keep their rank (see merge). Only the
+    /// dragged device arms for auto-switch — the rest are ranked for display.
+    func applyOrder(_ visibleUIDs: [String], moved movedUID: String) {
+        ranking.order = DevicePriorityStore.merge(stored: ranking.order, visible: visibleUIDs)
+        priorityStore.save(ranking.order)
+        ranking.armed.insert(movedUID)
+        priorityStore.saveArmed(ranking.armed)
         devices = sorted(devices)
     }
 
@@ -126,7 +129,7 @@ final class AudioDeviceMonitor {
     // MARK: - Priority
 
     private func sorted(_ list: [AudioDevice]) -> [AudioDevice] {
-        DevicePriorityPolicy.ordered(list, priority: priority)
+        DevicePriorityPolicy.ordered(list, priority: ranking.order)
     }
 
     /// Applies the policy's auto-switch decision (see DevicePriorityPolicy).
@@ -138,7 +141,7 @@ final class AudioDeviceMonitor {
         let decision = DevicePriorityPolicy.autoSwitch(
             presentUIDs: devices.map(\.uid),
             previousUIDs: previousUIDs,
-            priority: priority,
+            ranking: ranking,
             previousDefaultUID: lastDefaultUID,
             currentDefaultUID: defaultUID
         )

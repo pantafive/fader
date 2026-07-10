@@ -1,9 +1,11 @@
 import Foundation
 
 /// User-defined output device priority, an ordered list of device UIDs.
-/// Position is set by drag-reordering the device list; earlier wins. Devices
-/// never reordered are unranked and never auto-switched to. Persisted as a
-/// single JSON blob in UserDefaults.
+/// Position is set by drag-reordering the device list; earlier wins. A drag
+/// ranks every visible row (a dropped row must keep its position), so a
+/// separate armed set records which devices the user actually moved — only
+/// those are auto-switch candidates. Both persist as JSON blobs in
+/// UserDefaults.
 struct DevicePriorityStore {
     private let key: String
     private let defaults: UserDefaults
@@ -38,5 +40,13 @@ struct DevicePriorityStore {
 
     func save(_ order: [String]) {
         defaults.saveJSON(order, forKey: key)
+    }
+
+    func loadArmed() -> Set<String> {
+        Set(defaults.loadJSON([String].self, forKey: key + "Armed") ?? [])
+    }
+
+    func saveArmed(_ armed: Set<String>) {
+        defaults.saveJSON(armed.sorted(), forKey: key + "Armed")
     }
 }
