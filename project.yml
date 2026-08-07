@@ -14,7 +14,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    MARKETING_VERSION: 0.18.0
+    MARKETING_VERSION: 0.19.0
     # Sparkle compares CFBundleVersion, not the marketing string — tying them
     # together means the CI's MARKETING_VERSION override feeds both, and a
     # static build number can never silently disable updates.
@@ -104,6 +104,7 @@ targets:
       - Fader/Audio/DevicePriorityPolicy.swift
       - Fader/Audio/MultiOutputPolicy.swift
       - Fader/Audio/VolumeTaper.swift
+      - Fader/Audio/TapMix.swift
       # Property wrappers and AudioDirection; nothing in the tests touches
       # a live HAL.
       - Fader/Audio/HALProperty.swift

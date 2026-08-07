@@ -132,7 +132,7 @@ struct DeviceListSection: View {
                     fromOffsets: IndexSet(integer: index),
                     toOffset: target > index ? target + 1 : target
                 )
-                monitor.applyOrder(order)
+                monitor.applyOrder(order, moved: main[index].uid)
             }
         }
     }
