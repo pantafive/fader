@@ -19,7 +19,7 @@ jobs:
       # Keep in sync with ci.yml; CI must test the SDK releases ship with.
       DEVELOPER_DIR: /Applications/Xcode_26.4.app
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # An unvalidated tag flows straight into CFBundleVersion and becomes
       # /releases/latest for every Sparkle client: a pre-release suffix breaks
@@ -214,7 +214,7 @@ jobs:
       # read/write; expires yearly. If this step fails the release is already
       # live — fix the token and re-run, the no-diff guard makes it safe.
       - name: Checkout homebrew-tap
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: pantafive/homebrew-tap
           token: ${{ secrets.TAP_PUSH_TOKEN }}
