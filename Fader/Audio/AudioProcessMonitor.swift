@@ -109,6 +109,7 @@ final class AudioProcessMonitor {
                 isRecording: group.recording
             )
         }
+        nextApps = AudioApp.coalescedByBundleID(nextApps)
 
         // Playing apps first, then alphabetical; stable for equal keys.
         nextApps.sort {
