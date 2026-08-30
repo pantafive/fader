@@ -4,7 +4,7 @@ import Observation
 import os
 
 /// A paired Bluetooth device with an audio profile.
-struct BluetoothAudioDevice: Identifiable, Hashable {
+struct BluetoothAudioDevice: Identifiable, Hashable, Sendable {
     /// MAC address in IOBluetooth form: "50-c0-f0-00-1c-78".
     let id: String
     let name: String
@@ -25,14 +25,21 @@ struct BluetoothAudioDevice: Identifiable, Hashable {
 @Observable
 final class BluetoothAudioMonitor {
     private nonisolated static let logger = Logger(subsystem: "dev.pantafive.fader", category: "BluetoothAudioMonitor")
+    /// IOBluetooth's legacy API is synchronous and can block for seconds. A
+    /// dedicated serial queue keeps that work off Swift's cooperative executor
+    /// and, critically, prevents refresh/connect/disconnect calls from piling
+    /// into the Bluetooth daemon concurrently.
+    private nonisolated static let ioQueue = DispatchQueue(label: "dev.pantafive.fader.bluetooth", qos: .utility)
 
     private(set) var paired: [BluetoothAudioDevice] = []
     /// Addresses with a connect/disconnect operation in flight.
     private(set) var busy: Set<String> = []
 
-    /// Orders overlapping refreshes: a stale enumeration that finishes late
-    /// must not overwrite a fresher list.
-    @ObservationIgnored private var refreshGeneration = 0
+    /// At most one enumeration runs at a time. Notifications that arrive while
+    /// it is in flight collapse into one follow-up read so the final snapshot is
+    /// fresh without spawning an unbounded family of detached tasks.
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshPending = false
 
     #if RENDER_SHOTS
         /// Render harness only: publish a paired list without touching IOBluetooth.
@@ -48,15 +55,29 @@ final class BluetoothAudioMonitor {
             // access trips TCC and aborts the render process.
             if RenderHarness.isActive { return }
         #endif
-        refreshGeneration += 1
-        let generation = refreshGeneration
-        Task.detached(priority: .userInitiated) {
-            let devices = Self.readPairedAudioDevices()
-            await MainActor.run { [weak self] in
-                guard let self, generation == refreshGeneration else { return }
+        guard refreshTask == nil else {
+            refreshPending = true
+            return
+        }
+        refreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                let devices = await Self.performIO(qos: .utility) {
+                    Self.readPairedAudioDevices()
+                }
+                guard let self, !Task.isCancelled else { return }
                 paired = devices
+                if refreshPending {
+                    refreshPending = false
+                    continue
+                }
+                refreshTask = nil
+                return
             }
         }
+    }
+
+    deinit {
+        refreshTask?.cancel()
     }
 
     private nonisolated static func readPairedAudioDevices() -> [BluetoothAudioDevice] {
@@ -82,18 +103,18 @@ final class BluetoothAudioMonitor {
         guard !busy.contains(device.id) else { return }
         busy.insert(device.id)
         let address = device.id
-        Task.detached(priority: .userInitiated) {
-            let target = IOBluetoothDevice(addressString: address)
-            let result = target?.openConnection() ?? kIOReturnError
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                busy.remove(address)
-                refresh()
-                if result == kIOReturnSuccess {
-                    onConnected(device)
-                } else {
-                    Self.logger.error("Connect failed for \(device.name): IOReturn \(result)")
-                }
+        Task { @MainActor [weak self] in
+            let result = await Self.performIO(qos: .userInitiated) {
+                let target = IOBluetoothDevice(addressString: address)
+                return target?.openConnection() ?? kIOReturnError
+            }
+            guard let self else { return }
+            busy.remove(address)
+            refresh()
+            if result == kIOReturnSuccess {
+                onConnected(device)
+            } else {
+                Self.logger.error("Connect failed for \(device.name): IOReturn \(result)")
             }
         }
     }
@@ -102,16 +123,29 @@ final class BluetoothAudioMonitor {
         guard !busy.contains(device.id) else { return }
         busy.insert(device.id)
         let address = device.id
-        Task.detached(priority: .userInitiated) {
-            let target = IOBluetoothDevice(addressString: address)
-            let result = target?.closeConnection() ?? kIOReturnError
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                busy.remove(address)
-                refresh()
-                if result != kIOReturnSuccess {
-                    Self.logger.error("Disconnect failed for \(device.name): IOReturn \(result)")
-                }
+        Task { @MainActor [weak self] in
+            let result = await Self.performIO(qos: .userInitiated) {
+                let target = IOBluetoothDevice(addressString: address)
+                return target?.closeConnection() ?? kIOReturnError
+            }
+            guard let self else { return }
+            busy.remove(address)
+            refresh()
+            if result != kIOReturnSuccess {
+                Self.logger.error("Disconnect failed for \(device.name): IOReturn \(result)")
+            }
+        }
+    }
+
+    /// Bridges synchronous IOBluetooth calls onto the one serial legacy-API
+    /// queue. The continuation carries only Sendable values back to Swift.
+    private nonisolated static func performIO<T: Sendable>(
+        qos: DispatchQoS,
+        _ operation: @escaping @Sendable () -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            ioQueue.async(qos: qos) {
+                continuation.resume(returning: operation())
             }
         }
     }
