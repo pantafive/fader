@@ -37,8 +37,13 @@ final class AudioProcessMonitor {
             while !Task.isCancelled {
                 // Generous tolerance lets the kernel coalesce the wakeup with
                 // other timers — playing-state freshness doesn't need precision.
-                try? await Task.sleep(for: .seconds(2), tolerance: .milliseconds(500))
-                self?.refresh()
+                do {
+                    try await Task.sleep(for: .seconds(2), tolerance: .milliseconds(500))
+                } catch {
+                    break
+                }
+                guard let self else { break }
+                refresh()
             }
         }
         refresh()
