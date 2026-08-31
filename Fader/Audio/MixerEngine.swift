@@ -140,35 +140,15 @@ final class MixerEngine {
 
     // MARK: - Private
 
-    /// A Core Audio service reset invalidates cached object IDs and every
-    /// listener registered by the client. Recreate all HAL-bound state instead
-    /// of letting stale taps, sliders, and device lists limp on indefinitely.
-    private func recoverAfterAudioServiceRestart() {
-        Self.logger.warning("Core Audio service restarted; rebuilding HAL state")
-        prepareForSleep()
-
+    func discardHALBoundState() {
         for tap in taps.values {
             tap.invalidate()
         }
         taps.removeAll()
         routeVolumes.removeAll()
-
-        processMonitor.recoverAfterServiceRestart()
-        deviceMonitor.recoverAfterServiceRestart()
-        inputDeviceMonitor.recoverAfterServiceRestart()
-        systemVolume.recoverAfterServiceRestart()
-        inputVolume.recoverAfterServiceRestart()
-        multiOutput.recoverAfterServiceRestart()
-        installHALListeners()
-        bluetooth.refresh()
-        syncTaps()
-
-        // The reset notification can precede the final device publication.
-        // Reuse the bounded wake resync for one tolerant second pass.
-        recoverAfterWake()
     }
 
-    private func installHALListeners() {
+    func installHALListeners() {
         // Rebuild taps when the default output device changes — each aggregate
         // is pinned to a concrete device UID.
         deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
@@ -231,7 +211,7 @@ final class MixerEngine {
 
     /// Ensures every non-neutral running app has a live tap covering its
     /// current process set, and every gone app's tap is released.
-    private func syncTaps() {
+    func syncTaps() {
         let running = Dictionary(uniqueKeysWithValues: processMonitor.apps.map { ($0.bundleID, $0) })
 
         for (bundleID, tap) in taps {
