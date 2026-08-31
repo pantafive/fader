@@ -31,9 +31,15 @@ extension ProcessTap {
         }
     }
 
+    /// Safe to call away from the main actor. Core Audio property reads are
+    /// synchronous IPC and can take milliseconds even though they use no CPU.
+    nonisolated var hasRunningOutput: Bool {
+        processObjectIDs.contains(where: { $0.readProcessIsRunningOutput() })
+    }
+
     @MainActor
-    func resumeIfOutputStarted() {
-        guard isSuspended, processObjectIDs.contains(where: { $0.readProcessIsRunningOutput() }) else { return }
+    func resumeAfterOutputStarted() {
+        guard isSuspended else { return }
         isProcessPlaying = true
         resumeIO()
     }
