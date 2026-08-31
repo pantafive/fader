@@ -57,6 +57,25 @@ final class AudioDeviceMonitor {
     func start() {
         lastUsed = usageStore.load()
         ranking = DeviceRanking(order: priorityStore.load(), armed: priorityStore.loadArmed())
+        installListeners()
+        refresh()
+    }
+
+    /// A service reset can preserve UIDs while replacing every AudioObjectID.
+    /// Empty the stale snapshot and suppress hotplug policy until a clean
+    /// baseline has been established from the restarted service.
+    func recoverAfterServiceRestart() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        listeners.removeAll()
+        devices = []
+        defaultDeviceID = .unknown
+        hasBaseline = false
+        installListeners()
+        refresh()
+    }
+
+    private func installListeners() {
         listeners = [
             AudioObjectID.system.listen(kAudioHardwarePropertyDevices) {
                 Task { @MainActor [weak self] in self?.scheduleRefresh() }
@@ -65,7 +84,6 @@ final class AudioDeviceMonitor {
                 Task { @MainActor [weak self] in self?.scheduleRefresh() }
             },
         ]
-        refresh()
     }
 
     func setDefault(_ device: AudioDevice) {

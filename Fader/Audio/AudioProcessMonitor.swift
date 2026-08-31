@@ -26,10 +26,7 @@ final class AudioProcessMonitor {
 
     func start() {
         guard pollTask == nil else { return } // idempotent: a second call must not double-listen
-        // List changes (process appeared / exited) arrive as HAL notifications.
-        listListener = AudioObjectID.system.listen(kAudioHardwarePropertyProcessObjectList) {
-            Task { @MainActor [weak self] in self?.scheduleRefresh() }
-        }
+        installListListener()
         // Per-process IsRunningOutput flips do NOT arrive in practice
         // (observed on macOS 26), so the playing state is polled. Reading the
         // flags of a few dozen process objects costs microseconds.
@@ -49,9 +46,27 @@ final class AudioProcessMonitor {
         refresh()
     }
 
+    /// Core Audio resets discard client listeners and invalidate process
+    /// object IDs. Keep the inexpensive poll task, but replace the listener
+    /// and published objects before attempting a fresh enumeration.
+    func recoverAfterServiceRestart() {
+        pendingRefresh?.cancel()
+        pendingRefresh = nil
+        apps = []
+        installListListener()
+        refresh()
+    }
+
     deinit {
         pollTask?.cancel()
         pendingRefresh?.cancel()
+    }
+
+    private func installListListener() {
+        // List changes (process appeared / exited) arrive as HAL notifications.
+        listListener = AudioObjectID.system.listen(kAudioHardwarePropertyProcessObjectList) {
+            Task { @MainActor [weak self] in self?.scheduleRefresh() }
+        }
     }
 
     /// Coalesces listener bursts: HAL fires once per process and once per

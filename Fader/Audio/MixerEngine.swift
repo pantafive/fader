@@ -34,6 +34,7 @@ final class MixerEngine {
     @ObservationIgnored private var routeVolumes: [String: DeviceVolumeController] = [:]
     @ObservationIgnored private let store = VolumeStore()
     @ObservationIgnored private var deviceListener: HALListener?
+    @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored var routingTask: Task<Void, Never>?
     @ObservationIgnored var bluetoothRefreshTask: Task<Void, Never>?
@@ -62,11 +63,7 @@ final class MixerEngine {
         multiOutput.start()
         bluetooth.refresh()
 
-        // Rebuild taps when the default output device changes — each aggregate
-        // is pinned to a concrete device UID.
-        deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
-            Task { @MainActor [weak self] in self?.reconcileTapRouting() }
-        }
+        installHALListeners()
 
         observeApps()
         observeDevices()
@@ -142,6 +139,45 @@ final class MixerEngine {
     }
 
     // MARK: - Private
+
+    /// A Core Audio service reset invalidates cached object IDs and every
+    /// listener registered by the client. Recreate all HAL-bound state instead
+    /// of letting stale taps, sliders, and device lists limp on indefinitely.
+    private func recoverAfterAudioServiceRestart() {
+        Self.logger.warning("Core Audio service restarted; rebuilding HAL state")
+        prepareForSleep()
+
+        for tap in taps.values {
+            tap.invalidate()
+        }
+        taps.removeAll()
+        routeVolumes.removeAll()
+
+        processMonitor.recoverAfterServiceRestart()
+        deviceMonitor.recoverAfterServiceRestart()
+        inputDeviceMonitor.recoverAfterServiceRestart()
+        systemVolume.recoverAfterServiceRestart()
+        inputVolume.recoverAfterServiceRestart()
+        multiOutput.recoverAfterServiceRestart()
+        installHALListeners()
+        bluetooth.refresh()
+        syncTaps()
+
+        // The reset notification can precede the final device publication.
+        // Reuse the bounded wake resync for one tolerant second pass.
+        recoverAfterWake()
+    }
+
+    private func installHALListeners() {
+        // Rebuild taps when the default output device changes — each aggregate
+        // is pinned to a concrete device UID.
+        deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
+            Task { @MainActor [weak self] in self?.reconcileTapRouting() }
+        }
+        serviceRestartListener = AudioObjectID.system.listen(kAudioHardwarePropertyServiceRestarted) {
+            Task { @MainActor [weak self] in self?.recoverAfterAudioServiceRestart() }
+        }
+    }
 
     private func observeApps() {
         // Re-sync taps whenever the app list changes (launch/quit).
