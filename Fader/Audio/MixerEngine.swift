@@ -233,7 +233,6 @@ final class MixerEngine {
     /// current process set, and every gone app's tap is released.
     private func syncTaps() {
         let running = Dictionary(uniqueKeysWithValues: processMonitor.apps.map { ($0.bundleID, $0) })
-
         for (bundleID, tap) in taps {
             guard let app = running[bundleID] else {
                 tap.invalidate()
@@ -245,9 +244,10 @@ final class MixerEngine {
             if tap.processObjectIDs != app.objectIDs {
                 tap.invalidate()
                 taps[bundleID] = nil
+            } else {
+                tap.updatePlaybackState(isPlaying: app.isPlaying)
             }
         }
-
         for (bundleID, entry) in volumes where !entry.isNeutral {
             guard taps[bundleID] == nil, let app = running[bundleID] else { continue }
             createTap(for: app, entry: entry)
@@ -276,7 +276,6 @@ final class MixerEngine {
         // never fired), and a silently dead tap would mute the app outright.
         // Saved volumes survive and re-apply once multi-output dissolves.
         guard !multiOutput.isActive else { return }
-
         let outputs: [ProcessTap.Output]
         do {
             outputs = try resolvedOutputs(for: entry)
@@ -285,7 +284,6 @@ final class MixerEngine {
             Self.logger.error("Default device read failed: \(error.localizedDescription)")
             return
         }
-
         // A routed app's loudness lives on its devices' own volume controls
         // (one slider per pinned device), so its tap renders transparent — the
         // app-level gain and mute apply only when it follows the default.
@@ -297,6 +295,8 @@ final class MixerEngine {
                 isMuted: routed ? false : entry.isMuted
             )
             try tap.activate(outputs: outputs)
+            tap.onOutputResumed = { [weak self] in self?.processMonitor.refresh() }
+            tap.updatePlaybackState(isPlaying: app.isPlaying)
             taps[app.bundleID] = tap
             needsAudioCapturePermission = false
         } catch {
