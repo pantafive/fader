@@ -41,6 +41,21 @@ final class MultiOutputController {
 
     func start() {
         adoptOrDestroyLeftover()
+        installDefaultListener()
+    }
+
+    /// Public aggregates may survive an audio-service reset under a new object
+    /// ID. Forget all cached HAL identities, then adopt the live aggregate only
+    /// when it is still the default; otherwise fail safe to the system route.
+    func recoverAfterServiceRestart() {
+        aggregateID = .unknown
+        members = []
+        defaultListener = nil
+        adoptOrDestroyLeftover()
+        installDefaultListener()
+    }
+
+    private func installDefaultListener() {
         // Output switched elsewhere (Control Center, Sound settings, a device
         // row click) means the aggregate left the audio path — dissolve.
         defaultListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
