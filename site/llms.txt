@@ -1,8 +1,59 @@
 # Fader
 
-> Fader is a free, open-source macOS menu bar app for audio control: switch the output device with one click, connect paired Bluetooth headphones, set a separate volume for every running app, and play audio to several devices at once with a volume slider per device. It uses Core Audio process taps (an API introduced in macOS 14.4; Fader itself supports macOS 15+), needs no kernel extension or virtual driver, and has no telemetry.
+> Fader is a free, open-source macOS menu bar app for audio control: switch the output device with one click, connect paired Bluetooth headphones, set a separate volume for every running app, route an app to chosen output devices, and play audio to several devices at once with a volume slider per device. It uses Core Audio process taps (an API introduced in macOS 14.4; Fader itself supports macOS 15+), needs no kernel extension or virtual driver, and has no telemetry.
 
-Key facts: requires macOS 15+, Apple silicon; MIT license; install via `brew install --cask pantafive/tap/fader` or the notarized dmg.
+Key facts: requires macOS 15+, Apple silicon; MIT license; install via `brew install --cask pantafive/tap/fader` or the notarized dmg; updates itself (Sparkle).
+
+## Features
+
+### Output switching
+- Every output device in one list in the menu bar popover: built-in speakers, wired headphones, USB and Thunderbolt interfaces, displays, AirPlay targets; one click makes it the default and moves the sound there.
+- The current device sits at the top with a check mark, its own volume slider and a mute button; system volume and mute stay in sync with the volume keys and Control Center.
+- Each device gets an icon matching what it is (AirPods, headphones, display, the Mac model itself).
+- Wired devices unused for 30 days fold into a collapsible "Rarely used" group; dragging a row onto that group demotes it by hand.
+- Drag rows to rank devices; once ranked, Fader auto-switches to a higher-ranked device when it connects and falls back to the best device still present when the current one disappears. Ranking stays dormant until the user reorders the list the first time.
+
+### Bluetooth
+- A Bluetooth section lists paired audio devices (headphones, earbuds, speakers) even while they are disconnected.
+- Clicking a disconnected device shows Connect; Fader connects it and routes audio to it in one step, without opening System Settings.
+- A connected Bluetooth device shows up in the main list like any other output; the same row disconnects it.
+
+### Audio on several devices at once
+- Drag a device from the list onto the Output section and both play together (two pairs of headphones for one movie, speakers plus headphones, and so on); any number of members.
+- Each member keeps its own volume slider; the ✕ removes one member; clicking any device in the list routes everything back to that single device.
+- Built on a macOS multi-output device that Fader creates and removes automatically, no Audio MIDI Setup work; the first non-Bluetooth member is the clock, drift compensation on the rest.
+- While a group plays, the volume keys are replaced by the per-device sliders (macOS multi-output devices have no master volume) and per-app faders pause, returning with their saved levels afterwards.
+
+### Per-app volume
+- Every app that plays sound appears under Apps with its own volume fader, a percentage readout and a mute button; apps with a non-default level stay listed even when silent.
+- Levels persist across launches and app restarts.
+- An app at 100% and unmuted is not tapped at all: bit-perfect native playback. A tap exists only while a fader sits below full volume or the app is muted.
+- Scroll the wheel or swipe the trackpad over any slider to adjust it without clicking; right-click an app for Reset to 100%.
+- Helper processes are grouped under the owning app (a browser's media helper shows as the browser).
+
+### Per-app output routing
+- Drag one or more output devices onto an app and it plays through exactly those devices, each with its own volume slider, while everything else stays on the main output.
+- A pinned device leaves the picker and is shown inside the app's card; its ✕ hands it back; right-click offers Play on default output.
+- Unplug a pinned device and the app falls back to the default output, then re-pins the moment the device returns.
+
+### Microphone
+- The microphone tab switches the default input device with one click and sets its input gain from a slider.
+- On devices whose gain is fixed in hardware the slider disables itself and says so.
+- The apps section on this tab shows which apps are recording from the microphone right now.
+
+### Menu bar app
+- Lives in the menu bar with no Dock icon; Launch at Login toggle; self-updating with an Update Automatically toggle and a Check for Updates item; a Report a Bug item opens a GitHub issue.
+- Native Swift for Apple silicon, macOS 15 and later; signed and notarized; MIT license.
+- One permission: only per-app volume asks for the macOS System Audio Recording permission, the first time an app fader is moved; the tapped audio never leaves the Mac. Everything else works without permissions.
+- No kernel extension, no virtual audio driver, nothing installed in System Settings; no telemetry, no analytics.
+
+## FAQ
+
+- How do I change the volume of a single app on a Mac? Install Fader; every app that plays sound gets its own fader in the menu bar popover.
+- How do I play Mac audio on two devices at once? Drag a second device onto the Output section of the popover; each device keeps its own slider.
+- How do I switch audio output from the menu bar? Click the Fader icon and pick a device; Bluetooth headphones connect from the same list.
+- Is Fader a free alternative to SoundSource, Sound Control or Background Music? Fader is free and MIT-licensed and covers output switching, per-app volume, per-app output routing and multi-device playback; it has no equalizer or effects.
+- Does Fader send any data? No telemetry, no analytics.
 
 ## Links
 
@@ -10,3 +61,4 @@ Key facts: requires macOS 15+, Apple silicon; MIT license; install via `brew ins
 - [Source code](https://github.com/pantafive/fader): GitHub repository, issues, releases
 - [Latest download](https://github.com/pantafive/fader/releases/latest/download/Fader.dmg): signed and notarized dmg
 - [README](https://raw.githubusercontent.com/pantafive/fader/main/README.md): features, permissions model, development guide
+- [Screenshot](https://fader.pantafive.dev/screenshot.png): output tab, per-app routing, Bluetooth connect

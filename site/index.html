@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fader — volume control for your Mac menu bar</title>
+<title>Fader — per-app volume &amp; audio output switcher for Mac</title>
 <meta name="description" content="Free, open-source macOS menu bar app: per-app volume faders, one-click output switching, audio on two devices at once. Zero telemetry. macOS 15+, Apple silicon.">
 <link rel="canonical" href="https://fader.pantafive.dev/">
 <link rel="icon" type="image/png" href="/favicon.png">
@@ -12,14 +12,14 @@
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Fader">
-<meta property="og:title" content="Fader — volume control for your Mac menu bar">
+<meta property="og:title" content="Fader — per-app volume &amp; audio output switcher for Mac">
 <meta property="og:description" content="Free, open-source macOS menu bar app: per-app volume faders, one-click output switching, audio on two devices at once. Zero telemetry. macOS 15+, Apple silicon.">
 <meta property="og:url" content="https://fader.pantafive.dev/">
 <meta property="og:image" content="https://fader.pantafive.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Fader — volume control for your Mac menu bar">
+<meta name="twitter:title" content="Fader — per-app volume &amp; audio output switcher for Mac">
 <meta name="twitter:description" content="Free, open-source macOS menu bar app: per-app volume faders, one-click output switching, audio on two devices at once. Zero telemetry. macOS 15+, Apple silicon.">
 <meta name="twitter:image" content="https://fader.pantafive.dev/og.png">
 <style>
@@ -664,6 +664,35 @@
   document.documentElement.dataset.theme =
     localStorage.getItem("theme")
     || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Fader",
+  "url": "https://fader.pantafive.dev/",
+  "description": "Free, open-source macOS menu bar app: per-app volume faders, one-click audio output switching, Bluetooth headphone connect, audio on two devices at once, microphone switching. No telemetry.",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS 15 or later (Apple silicon)",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://github.com/pantafive/fader/blob/main/LICENSE",
+  "isAccessibleForFree": true,
+  "downloadUrl": "https://github.com/pantafive/fader/releases/latest/download/Fader.dmg",
+  "installUrl": "https://fader.pantafive.dev/#install",
+  "screenshot": "https://fader.pantafive.dev/screenshot.png",
+  "image": "https://fader.pantafive.dev/og.png",
+  "author": { "@type": "Person", "name": "pantafive", "url": "https://github.com/pantafive" },
+  "sameAs": ["https://github.com/pantafive/fader"],
+  "featureList": [
+    "Per-app volume fader and mute for every app that plays sound",
+    "One-click audio output switching from the menu bar",
+    "Connect and disconnect paired Bluetooth headphones",
+    "Play audio on several output devices at once, each with its own volume",
+    "Route one app to specific output devices",
+    "Switch the default microphone and set input gain",
+    "Auto-switch to the highest-ranked device present"
+  ]
+}
 </script>
 </head>
 <body>
