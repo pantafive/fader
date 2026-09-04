@@ -35,8 +35,10 @@ final class MixerEngine {
     @ObservationIgnored private let store = VolumeStore()
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    @ObservationIgnored private var routingTask: Task<Void, Never>?
-    @ObservationIgnored private var bluetoothRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var routingTask: Task<Void, Never>?
+    @ObservationIgnored var bluetoothRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var wakeResyncTask: Task<Void, Never>?
+    @ObservationIgnored private var powerMonitor: AudioPowerMonitor?
 
     #if RENDER_SHOTS
         /// Render harness only: mark the engine started and publish per-app
@@ -68,6 +70,11 @@ final class MixerEngine {
 
         observeApps()
         observeDevices()
+        powerMonitor = AudioPowerMonitor(
+            onSleep: { [weak self] in self?.prepareForSleep() },
+            onWake: { [weak self] in self?.recoverAfterWake() }
+        )
+        powerMonitor?.start()
         syncTaps()
         isStarted = true
     }
@@ -86,37 +93,6 @@ final class MixerEngine {
         var entry = volumes[app.bundleID] ?? AppVolume()
         entry.isMuted.toggle()
         apply(entry, to: app)
-    }
-
-    /// Paired IOBluetooth peer of a HAL device, when one matches by MAC.
-    func bluetoothPeer(for device: AudioDevice) -> BluetoothAudioDevice? {
-        bluetooth.paired.first { device.matches(bluetoothID: $0.id) }
-    }
-
-    /// Connects Bluetooth headphones and routes output to them once CoreAudio
-    /// picks the device up.
-    func connectBluetooth(_ device: BluetoothAudioDevice) {
-        bluetooth.connect(device) { [weak self] connected in
-            self?.routeWhenAvailable(connected)
-        }
-    }
-
-    /// The HAL device for a Bluetooth peer appears a moment after the link
-    /// opens; its UID starts with the MAC address. Poll briefly, then route.
-    /// A new connect cancels the previous poll so rapid reconnects don't race.
-    private func routeWhenAvailable(_ device: BluetoothAudioDevice) {
-        routingTask?.cancel()
-        routingTask = Task { @MainActor [weak self] in
-            for _ in 0 ..< 16 {
-                guard let self, !Task.isCancelled else { return }
-                deviceMonitor.refresh()
-                if let halDevice = deviceMonitor.devices.first(where: { $0.matches(bluetoothID: device.id) }) {
-                    deviceMonitor.setDefault(halDevice)
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(300))
-            }
-        }
     }
 
     /// Adds a device to the active outputs, building the multi-output route
@@ -192,18 +168,6 @@ final class MixerEngine {
                 self.reconcileTapRouting()
                 self.observeDevices()
             }
-        }
-    }
-
-    /// Twice: once now, once after IOBluetooth's connection state has had a
-    /// moment to settle — it lags the HAL by a beat in both directions.
-    private func refreshBluetoothSoon() {
-        bluetooth.refresh()
-        bluetoothRefreshTask?.cancel()
-        bluetoothRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            self?.bluetooth.refresh()
         }
     }
 
@@ -326,7 +290,7 @@ final class MixerEngine {
     /// unrelated apps don't blip. Stale = resolved targets changed (object IDs
     /// too — devices re-publish under an old UID), aggregate died, or resolve
     /// failed; a wedged tap keeps its app muted, dropping it un-mutes.
-    private func reconcileTapRouting() {
+    func reconcileTapRouting() {
         for (bundleID, tap) in taps {
             guard let entry = volumes[bundleID] else { continue }
             if let desired = try? resolvedOutputs(for: entry),
