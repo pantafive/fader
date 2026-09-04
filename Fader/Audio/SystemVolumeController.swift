@@ -43,10 +43,24 @@ final class SystemVolumeController {
     #endif
 
     func start() {
+        installDefaultDeviceListener()
+        attachToDefaultDevice()
+    }
+
+    /// Replaces both the system and device listeners after Core Audio reset;
+    /// their registrations and the endpoint object ID are no longer valid.
+    func recoverAfterServiceRestart() {
+        defaultDeviceListener = nil
+        deviceListeners.removeAll()
+        endpoint.deviceID = .unknown
+        installDefaultDeviceListener()
+        attachToDefaultDevice()
+    }
+
+    private func installDefaultDeviceListener() {
         defaultDeviceListener = AudioObjectID.system.listen(direction.defaultDeviceSelector) {
             Task { @MainActor [weak self] in self?.attachToDefaultDevice() }
         }
-        attachToDefaultDevice()
     }
 
     func setVolume(_ value: Float) {
