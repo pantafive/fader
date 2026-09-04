@@ -233,7 +233,6 @@ final class MixerEngine {
     /// current process set, and every gone app's tap is released.
     private func syncTaps() {
         let running = Dictionary(uniqueKeysWithValues: processMonitor.apps.map { ($0.bundleID, $0) })
-
         for (bundleID, tap) in taps {
             guard let app = running[bundleID] else {
                 tap.invalidate()
@@ -301,8 +300,9 @@ final class MixerEngine {
             needsAudioCapturePermission = false
         } catch {
             Self.logger.error("Tap failed for \(app.bundleID): \(error.localizedDescription)")
-            // TCC denial surfaces as a tap creation failure; offer the user a way out.
-            needsAudioCapturePermission = true
+            if let halError = error as? HALError, halError.isPermissionDenied {
+                needsAudioCapturePermission = true
+            }
         }
     }
 
