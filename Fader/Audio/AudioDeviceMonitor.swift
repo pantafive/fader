@@ -27,6 +27,10 @@ final class AudioDeviceMonitor {
     /// "appears" at once and none of that is a hotplug event.
     @ObservationIgnored private var hasBaseline = false
     @ObservationIgnored private var lastDefaultUID: String?
+    /// HAL emits device/default changes in bursts (one per aggregate member and
+    /// property). Collapse one main-queue burst into one enumeration instead of
+    /// queueing a full synchronous refresh for every callback.
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
 
     init(direction: AudioDirection = .output) {
         self.direction = direction
@@ -55,10 +59,10 @@ final class AudioDeviceMonitor {
         ranking = DeviceRanking(order: priorityStore.load(), armed: priorityStore.loadArmed())
         listeners = [
             AudioObjectID.system.listen(kAudioHardwarePropertyDevices) {
-                Task { @MainActor [weak self] in self?.refresh() }
+                Task { @MainActor [weak self] in self?.scheduleRefresh() }
             },
             AudioObjectID.system.listen(direction.defaultDeviceSelector) {
-                Task { @MainActor [weak self] in self?.refresh() }
+                Task { @MainActor [weak self] in self?.scheduleRefresh() }
             },
         ]
         refresh()
@@ -102,6 +106,11 @@ final class AudioDeviceMonitor {
     }
 
     func refresh() {
+        // An explicit refresh (startup/wake/final Bluetooth fallback) supersedes
+        // a queued burst refresh that has not started yet.
+        refreshTask?.cancel()
+        refreshTask = nil
+
         defaultDeviceID = (try? AudioObjectID.readDefaultDevice(direction)) ?? .unknown
         let defaultUID = try? defaultDeviceID.readDeviceUID()
         stampDefaultDevice(uid: defaultUID)
@@ -124,6 +133,24 @@ final class AudioDeviceMonitor {
         autoSwitch(previousUIDs: previousUIDs, defaultUID: defaultUID)
         lastDefaultUID = defaultUID
         hasBaseline = true
+    }
+
+    deinit {
+        refreshTask?.cancel()
+    }
+
+    private func scheduleRefresh() {
+        guard refreshTask == nil else { return }
+        refreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(50), tolerance: .milliseconds(25))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            refreshTask = nil
+            refresh()
+        }
     }
 
     // MARK: - Priority

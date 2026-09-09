@@ -65,6 +65,12 @@ final class SystemVolumeController {
         }
     }
 
+    /// Rebinds listeners after sleep/wake even if HAL omitted the expected
+    /// default-device notification.
+    func resync() {
+        attachToDefaultDevice()
+    }
+
     // MARK: - Private
 
     private func attachToDefaultDevice() {
