@@ -34,6 +34,7 @@ final class MixerEngine {
     @ObservationIgnored private var routeVolumes: [String: DeviceVolumeController] = [:]
     @ObservationIgnored private let store = VolumeStore()
     @ObservationIgnored private var deviceListener: HALListener?
+    @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored var routingTask: Task<Void, Never>?
     @ObservationIgnored var bluetoothRefreshTask: Task<Void, Never>?
@@ -62,11 +63,7 @@ final class MixerEngine {
         multiOutput.start()
         bluetooth.refresh()
 
-        // Rebuild taps when the default output device changes — each aggregate
-        // is pinned to a concrete device UID.
-        deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
-            Task { @MainActor [weak self] in self?.reconcileTapRouting() }
-        }
+        installHALListeners()
 
         observeApps()
         observeDevices()
@@ -143,6 +140,25 @@ final class MixerEngine {
 
     // MARK: - Private
 
+    func discardHALBoundState() {
+        for tap in taps.values {
+            tap.invalidate()
+        }
+        taps.removeAll()
+        routeVolumes.removeAll()
+    }
+
+    func installHALListeners() {
+        // Rebuild taps when the default output device changes — each aggregate
+        // is pinned to a concrete device UID.
+        deviceListener = AudioObjectID.system.listen(kAudioHardwarePropertyDefaultOutputDevice) {
+            Task { @MainActor [weak self] in self?.reconcileTapRouting() }
+        }
+        serviceRestartListener = AudioObjectID.system.listen(kAudioHardwarePropertyServiceRestarted) {
+            Task { @MainActor [weak self] in self?.recoverAfterAudioServiceRestart() }
+        }
+    }
+
     private func observeApps() {
         // Re-sync taps whenever the app list changes (launch/quit).
         withObservationTracking {
@@ -195,7 +211,7 @@ final class MixerEngine {
 
     /// Ensures every non-neutral running app has a live tap covering its
     /// current process set, and every gone app's tap is released.
-    private func syncTaps() {
+    func syncTaps() {
         let running = Dictionary(uniqueKeysWithValues: processMonitor.apps.map { ($0.bundleID, $0) })
 
         for (bundleID, tap) in taps {
