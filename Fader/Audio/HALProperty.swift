@@ -105,6 +105,19 @@ extension AudioObjectID {
         guard status == noErr else { throw HALError.osStatus(status, selector) }
     }
 
+    /// Writes an Objective-C/Core Foundation object property. HAL expects the
+    /// address of the object reference, not the object's storage.
+    func writeObjectReference(_ selector: AudioObjectPropertySelector, value: AnyObject) throws {
+        var address = Self.address(selector)
+        var reference = Unmanaged.passUnretained(value).toOpaque()
+        let status = withUnsafePointer(to: &reference) { pointer in
+            AudioObjectSetPropertyData(
+                self, &address, 0, nil, UInt32(MemoryLayout<UnsafeMutableRawPointer>.size), pointer
+            )
+        }
+        guard status == noErr else { throw HALError.osStatus(status, selector) }
+    }
+
     /// True when the object exposes the property at all.
     func hasProperty(_ selector: AudioObjectPropertySelector,
                      scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> Bool {
