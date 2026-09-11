@@ -36,6 +36,14 @@ final class UpdateController {
     /// instance to adopt instead of dissolving it.
     private(set) static var isRelaunchingForUpdate = false
 
+    /// Read once by AppDelegate at actual termination. Making the marker
+    /// one-shot prevents it from leaking into any later lifecycle decision.
+    static func consumeRelaunchingForUpdate() -> Bool {
+        let value = isRelaunchingForUpdate
+        isRelaunchingForUpdate = false
+        return value
+    }
+
     static let log = Logger(subsystem: "dev.pantafive.fader", category: "updates")
 
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
@@ -181,6 +189,12 @@ final class UpdateController {
         relaunchHandler?()
     }
 
+    fileprivate func relaunchAborted() {
+        guard Self.isRelaunchingForUpdate else { return }
+        Self.log.info("update relaunch aborted")
+        Self.isRelaunchingForUpdate = false
+    }
+
     private func teardownQuietWatch() {
         if let resignObserver {
             NotificationCenter.default.removeObserver(resignObserver)
@@ -222,6 +236,9 @@ private final class SparkleBridge: NSObject, SPUUpdaterDelegate, @MainActor SPUS
     /// Fires for every aborted cycle, including the benign outcomes already
     /// handled elsewhere — filter those, log the genuine failures.
     func updater(_: SPUUpdater, didAbortWithError error: Error) {
+        // Any aborted Sparkle cycle can be the relaunch attempt returning
+        // without termination. This is a no-op for ordinary background checks.
+        owner?.relaunchAborted()
         let nsError = error as NSError
         if nsError.domain == SUSparkleErrorDomain {
             let benign: [SUError] = [.noUpdateError, .installationCanceledError, .installationAuthorizeLaterError]
