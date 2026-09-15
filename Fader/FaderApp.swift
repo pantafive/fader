@@ -26,9 +26,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard !UpdateController.isRelaunchingForUpdate else { return }
+        let isUpdateRelaunch = UpdateController.consumeRelaunchingForUpdate()
+        // Process taps are private to this process and must always be faded and
+        // released. Only the public multi-output aggregate survives an update
+        // relaunch so the incoming instance can adopt it without rerouting.
         Self.engine?.fadeOutAndStop()
-        Self.engine?.multiOutput.shutdown()
+        if !isUpdateRelaunch {
+            Self.engine?.multiOutput.shutdown()
+        }
     }
 }
 

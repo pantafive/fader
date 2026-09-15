@@ -101,6 +101,7 @@ targets:
       - Fader/Audio/JSONDefaults.swift
       - Fader/Audio/DeviceSymbol.swift
       - Fader/Audio/AudioDevice.swift
+      - Fader/Audio/AudioApp.swift
       - Fader/Audio/DevicePriorityPolicy.swift
       - Fader/Audio/MultiOutputPolicy.swift
       - Fader/Audio/VolumeTaper.swift

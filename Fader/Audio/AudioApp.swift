@@ -27,3 +27,34 @@ struct AudioApp: Identifiable, Hashable {
             ?? NSWorkspace.shared.icon(for: .applicationBundle)
     }
 }
+
+extension AudioApp {
+    /// Multiple independently launched copies of one application can own
+    /// different HAL process objects while sharing a bundle identifier. Fader
+    /// exposes one slider per bundle, so fold those copies together instead of
+    /// letting a duplicate dictionary key trap the main actor.
+    static func coalescedByBundleID(_ apps: [AudioApp]) -> [AudioApp] {
+        var indices: [String: Int] = [:]
+        var result: [AudioApp] = []
+
+        for app in apps {
+            guard let index = indices[app.bundleID] else {
+                indices[app.bundleID] = result.count
+                result.append(app)
+                continue
+            }
+
+            let existing = result[index]
+            let representative = existing.id <= app.id ? existing : app
+            result[index] = AudioApp(
+                id: representative.id,
+                bundleID: app.bundleID,
+                name: representative.name,
+                objectIDs: Array(Set(existing.objectIDs + app.objectIDs)).sorted(),
+                isPlaying: existing.isPlaying || app.isPlaying,
+                isRecording: existing.isRecording || app.isRecording
+            )
+        }
+        return result
+    }
+}
