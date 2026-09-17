@@ -19,6 +19,18 @@ extension HALError: LocalizedError {
     }
 }
 
+extension HALError {
+    /// Core Audio uses a dedicated status for denied device/capture access.
+    /// Other setup failures (dead device, bad aggregate, illegal transient
+    /// operation) are recovery problems and must not masquerade as TCC denial.
+    var isPermissionDenied: Bool {
+        switch self {
+        case let .osStatus(status, _), let .operation(status, _):
+            status == kAudioDevicePermissionsError
+        }
+    }
+}
+
 /// Output vs. input side of the audio system. Everything device-related —
 /// default-device selector, channel/volume scope — hangs off this.
 enum AudioDirection {

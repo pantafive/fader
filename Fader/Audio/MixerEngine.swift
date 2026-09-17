@@ -282,8 +282,9 @@ final class MixerEngine {
             needsAudioCapturePermission = false
         } catch {
             Self.logger.error("Tap failed for \(app.bundleID): \(error.localizedDescription)")
-            // TCC denial surfaces as a tap creation failure; offer the user a way out.
-            needsAudioCapturePermission = true
+            if let halError = error as? HALError, halError.isPermissionDenied {
+                needsAudioCapturePermission = true
+            }
         }
     }
 
