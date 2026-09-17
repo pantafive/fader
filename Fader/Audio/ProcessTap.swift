@@ -11,7 +11,13 @@ import os
 /// read lock-free by the real-time HAL IO thread. Aligned Float32/Bool loads and
 /// stores are atomic on Apple silicon, so no locking is needed for these.
 final class ProcessTap: @unchecked Sendable {
-    private static let logger = Logger(subsystem: "dev.pantafive.fader", category: "ProcessTap")
+    static let logger = Logger(subsystem: "dev.pantafive.fader", category: "ProcessTap")
+    /// Fader never needs exclusive hardware access, and its audio IO must not
+    /// keep the CPU awake while the rest of the machine is idle.
+    private static func configureHALPowerPolicy() {
+        try? AudioObjectID.system.write(kAudioHardwarePropertySleepingIsAllowed, value: UInt32(1))
+        try? AudioObjectID.system.write(kAudioHardwarePropertyHogModeIsAllowed, value: UInt32(0))
+    }
 
     /// Slider position, 0.0...1.0. Read by the RT thread every buffer and
     /// run through `taperedGain` before it reaches the samples — the stored
@@ -31,12 +37,17 @@ final class ProcessTap: @unchecked Sendable {
     /// reinterpreting foreign bytes as floats.
     private nonisolated(unsafe) var _isFloat32 = true
 
-    private var tapID = AudioObjectID.unknown
-    private var aggregateID = AudioObjectID.unknown
-    private var procID: AudioDeviceIOProcID?
-    private let ioQueue = DispatchQueue(label: "dev.pantafive.fader.io", qos: .userInteractive)
+    var tapID = AudioObjectID.unknown
+    var aggregateID = AudioObjectID.unknown
+    var procID: AudioDeviceIOProcID?
+    var tapDescription: CATapDescription?
+    var idleTask: Task<Void, Never>?
+    var isProcessPlaying = true
+    private let ioQueue = DispatchQueue(label: "dev.pantafive.fader.io", qos: .userInitiated)
 
     let processObjectIDs: [AudioObjectID]
+    @MainActor var isSuspended = false
+    @MainActor var onOutputResumed: (@MainActor @Sendable () -> Void)?
 
     /// A resolved output device: the UID names the aggregate's sub-device, the
     /// object ID catches a device that died and re-published under the same
@@ -64,6 +75,7 @@ final class ProcessTap: @unchecked Sendable {
     }
 
     init(processObjectIDs: [AudioObjectID], volume: Float = 1.0, isMuted: Bool = false) {
+        Self.configureHALPowerPolicy()
         self.processObjectIDs = processObjectIDs
         _volume = volume
         _isMuted = isMuted
@@ -87,7 +99,7 @@ final class ProcessTap: @unchecked Sendable {
 
         var tap = AudioObjectID.unknown
         try checked(AudioHardwareCreateProcessTap(description, &tap), "create process tap")
-        tapID = tap
+        (tapID, tapDescription) = (tap, description)
 
         var aggregateDescription: [String: Any] = [
             // The plumbing prefix keeps it out of AudioDeviceMonitor's list.
@@ -172,13 +184,16 @@ final class ProcessTap: @unchecked Sendable {
     /// Releasing the tap restores the app's native output.
     @MainActor
     func invalidate() {
+        stopIdleLifecycle()
         Self.destroy(aggregateID: aggregateID, tapID: tapID, procID: procID)
         procID = nil
         aggregateID = .unknown
         tapID = .unknown
+        tapDescription = nil
     }
 
     deinit {
+        idleTask?.cancel()
         // Safe off the main actor: no other reference exists by now, and the
         // HAL calls block until the IO proc has exited.
         Self.destroy(aggregateID: aggregateID, tapID: tapID, procID: procID)
@@ -265,7 +280,7 @@ final class ProcessTap: @unchecked Sendable {
 }
 
 /// Converts an OSStatus into a thrown HALError with context.
-private func checked(_ status: OSStatus, _ what: @autoclosure () -> String) throws {
+func checked(_ status: OSStatus, _ what: @autoclosure () -> String) throws {
     guard status == noErr else {
         throw HALError.operation(status, what())
     }
