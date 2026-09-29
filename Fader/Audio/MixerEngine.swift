@@ -36,6 +36,7 @@ final class MixerEngine {
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var neutralTeardownTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var routingTask: Task<Void, Never>?
     @ObservationIgnored var bluetoothRefreshTask: Task<Void, Never>?
     @ObservationIgnored var wakeResyncTask: Task<Void, Never>?
@@ -194,8 +195,24 @@ final class MixerEngine {
         if let tap = taps[app.bundleID] {
             tap.volume = entry.volume
             tap.isMuted = entry.isMuted
+            scheduleNeutralTeardown(for: app.bundleID)
         } else if !entry.isNeutral {
             createTap(for: app, entry: entry)
+        }
+    }
+
+    /// Back at 100% the tap must go: the app's audio otherwise keeps coming
+    /// out of Fader's process, so capture that excludes the app itself
+    /// (Discord screen share) picks it up. Waits for the slider to settle.
+    private func scheduleNeutralTeardown(for bundleID: String) {
+        neutralTeardownTasks.removeValue(forKey: bundleID)?.cancel()
+        guard volumes[bundleID]?.isNeutral == true else { return }
+        neutralTeardownTasks[bundleID] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self, volumes[bundleID]?.isNeutral == true else { return }
+            neutralTeardownTasks[bundleID] = nil
+            volumes[bundleID] = nil
+            taps.removeValue(forKey: bundleID)?.invalidate()
         }
     }
 
