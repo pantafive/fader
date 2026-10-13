@@ -255,8 +255,8 @@ final class MixerEngine {
 
     /// Make-before-break: the replacement starts before the old tap goes, so
     /// the app is never left on its native output at full volume in between.
-    /// A failed replacement keeps the old tap holding the app silent while
-    /// retries run, up to TapRebuildPolicy's limit.
+    /// A failed replacement leaves a working old tap running; a broken one
+    /// holds the app silent while retries run, up to TapRebuildPolicy's limit.
     private func installTap(for app: AudioApp, entry: AppVolume) {
         let bundleID = app.bundleID
         let old = taps[bundleID]
@@ -278,7 +278,9 @@ final class MixerEngine {
                 return
             }
             scheduleTapRetry()
-            guard let old else { return }
+            // A tap that still renders keeps attenuating the processes it has;
+            // only one that can't play anymore needs holding silent.
+            guard let old, old.isHeld || !old.isAlive else { return }
             let since = rebuildPendingSince[bundleID] ?? .now
             switch TapRebuildPolicy.brokenTap(failingSince: since, now: .now) {
             case .hold:

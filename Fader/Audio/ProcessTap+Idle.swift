@@ -104,6 +104,7 @@ extension ProcessTap {
     /// tap takes over or MixerEngine gives up and releases it.
     @MainActor
     func holdSilent() {
+        isHeld = true
         stopIdleLifecycle()
         do {
             try setTapMuteBehavior(.muted)

@@ -47,6 +47,7 @@ final class ProcessTap: @unchecked Sendable {
 
     let processObjectIDs: [AudioObjectID]
     @MainActor var isSuspended = false
+    @MainActor var isHeld = false
     @MainActor var onOutputResumed: (@MainActor @Sendable () -> Void)?
     /// The IO could not restart; the tap holds its app silent until replaced.
     @MainActor var onBroken: (@MainActor @Sendable () -> Void)?
