@@ -47,7 +47,10 @@ final class ProcessTap: @unchecked Sendable {
 
     let processObjectIDs: [AudioObjectID]
     @MainActor var isSuspended = false
+    @MainActor var isHeld = false
     @MainActor var onOutputResumed: (@MainActor @Sendable () -> Void)?
+    /// The IO could not restart; the tap holds its app silent until replaced.
+    @MainActor var onBroken: (@MainActor @Sendable () -> Void)?
 
     /// A resolved output device: the UID names the aggregate's sub-device, the
     /// object ID catches a device that died and re-published under the same
@@ -80,6 +83,14 @@ final class ProcessTap: @unchecked Sendable {
         _volume = volume
         _isMuted = isMuted
         _currentGain = VolumeTaper.gain(position: volume)
+    }
+
+    /// Crossfades with the tap being replaced: that one ramps to zero while
+    /// this one ramps up over the same 30 ms curve, so both rendering the same
+    /// processes for a moment neither doubles the level nor dips it. Call
+    /// before activate().
+    func rampInFromSilence() {
+        _currentGain = 0
     }
 
     /// Builds the tap → aggregate → IO proc chain. The first UID is the clock

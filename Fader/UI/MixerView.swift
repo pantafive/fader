@@ -220,7 +220,7 @@ struct MixerView: View {
             waitingState
         } else if engine.multiOutput.isActive {
             // Per-app taps are suspended during multi-output (see
-            // MixerEngine.createTap); live-looking sliders would be a lie.
+            // MixerEngine.makeTap); live-looking sliders would be a lie.
             emptyState(icon: "slider.horizontal.3",
                        message: "Per-app volume is paused while playing to multiple outputs")
         } else if mixerApps.isEmpty {

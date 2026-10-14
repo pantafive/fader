@@ -77,3 +77,57 @@ struct BugAutoSwitchArmingTests {
         #expect(store.loadArmed() == ["earbuds"])
     }
 }
+
+// BUG: apps jumped to full volume when their tap was rebuilt.
+//
+// Reported: GitHub issue, 2026-10-13 — painful volume spikes on Bluetooth
+//   headphones that ignore the macOS volume, so Fader was the only attenuation.
+// Date: 2026-10-14
+//
+// What happened:
+//   Every rebuild (new helper process, output change, dead aggregate) destroyed
+//   the old tap before building the new one, handing the app its native output
+//   at full volume in between. A failed rebuild was never retried while the
+//   app kept playing steadily, and a parked tap that failed to restart
+//   destroyed itself without a replacement — the app stayed at full volume.
+//
+// Root cause:
+//   Teardown came first and nothing scheduled another attempt.
+//
+// Fix:
+//   MixerEngine builds the replacement before retiring the old tap, retries
+//   failures on TapRebuildPolicy's backoff, and holds a broken tap silent
+//   meanwhile. Building real taps needs a live HAL, so the hold and retry
+//   timing is what is pinned here.
+@Suite("bugfixes: tap rebuild volume spikes")
+struct BugTapRebuildSpikeTests {
+    @Test("bug: a just-failed rebuild holds the app silent instead of releasing it")
+    func bugFreshFailureHolds() {
+        let failed = ContinuousClock.Instant.now
+
+        let decision = TapRebuildPolicy.brokenTap(failingSince: failed, now: failed + .seconds(2))
+
+        #expect(decision == .hold)
+    }
+
+    @Test("a rebuild failing past the hold limit releases the app")
+    func longFailureReleases() {
+        let failed = ContinuousClock.Instant.now
+
+        let decision = TapRebuildPolicy.brokenTap(failingSince: failed,
+                                                  now: failed + TapRebuildPolicy.holdLimit)
+
+        #expect(decision == .release)
+    }
+
+    @Test("bug: retries start fast and back off to the cap", arguments: [
+        (1, Duration.milliseconds(250)),
+        (2, .milliseconds(500)),
+        (4, .seconds(2)),
+        (5, .seconds(4)),
+        (40, .seconds(4)),
+    ])
+    func bugRetryBackoff(failures: Int, expected: Duration) {
+        #expect(TapRebuildPolicy.retryDelay(afterFailures: failures) == expected)
+    }
+}

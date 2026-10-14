@@ -93,10 +93,26 @@ extension ProcessTap {
             onOutputResumed?()
         } catch {
             Self.logger.error("Failed to resume tap: \(error.localizedDescription)")
-            // Destroying the muted tap restores native audio. The process-list
-            // refresh then lets MixerEngine rebuild clean plumbing.
-            invalidate()
-            onOutputResumed?()
+            // Destroying the tap would restore native audio at full volume;
+            // stay silent and let MixerEngine build a replacement.
+            holdSilent()
+            onBroken?()
+        }
+    }
+
+    /// Keeps the app muted with nothing rendering it, until a replacement
+    /// tap takes over or MixerEngine gives up and releases it.
+    @MainActor
+    func holdSilent() {
+        isHeld = true
+        stopIdleLifecycle()
+        do {
+            try setTapMuteBehavior(.muted)
+        } catch {
+            Self.logger.error("Failed to hold tap silent: \(error.localizedDescription)")
+        }
+        if aggregateID.isValid, let procID {
+            AudioDeviceStop(aggregateID, procID)
         }
     }
 

@@ -28,7 +28,7 @@ final class MixerEngine {
 
     private(set) var volumes: [String: AppVolume] = [:]
 
-    @ObservationIgnored private var taps: [String: ProcessTap] = [:]
+    @ObservationIgnored var taps: [String: ProcessTap] = [:]
     /// One volume control per pinned-and-present device, keyed by UID — each
     /// routed output gets its own slider, like multi-output members.
     @ObservationIgnored private var routeVolumes: [String: DeviceVolumeController] = [:]
@@ -36,6 +36,10 @@ final class MixerEngine {
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    /// Taps that stopped playing where they should, with when that was found.
+    @ObservationIgnored var rebuildPendingSince: [String: ContinuousClock.Instant] = [:]
+    @ObservationIgnored var tapFailures = 0
+    @ObservationIgnored var retryTask: Task<Void, Never>?
     @ObservationIgnored var routingTask: Task<Void, Never>?
     @ObservationIgnored var bluetoothRefreshTask: Task<Void, Never>?
     @ObservationIgnored var wakeResyncTask: Task<Void, Never>?
@@ -107,9 +111,7 @@ final class MixerEngine {
     func reset(_ app: AudioApp) {
         volumes[app.bundleID] = nil
         store.save(volumes)
-        if let tap = taps.removeValue(forKey: app.bundleID) {
-            tap.invalidate()
-        }
+        releaseTap(app.bundleID)
     }
 
     /// Smooths the volume jump when Fader exits. A tap mutes the app's native
@@ -145,6 +147,7 @@ final class MixerEngine {
             tap.invalidate()
         }
         taps.removeAll()
+        rebuildPendingSince.removeAll()
         routeVolumes.removeAll()
     }
 
@@ -195,7 +198,7 @@ final class MixerEngine {
             tap.volume = entry.volume
             tap.isMuted = entry.isMuted
         } else if !entry.isNeutral {
-            createTap(for: app, entry: entry)
+            installTap(for: app, entry: entry)
         }
     }
 
@@ -216,23 +219,21 @@ final class MixerEngine {
         let running = Dictionary(uniqueKeysWithValues: apps.map { ($0.bundleID, $0) })
 
         for (bundleID, tap) in taps {
-            guard let app = running[bundleID] else {
-                tap.invalidate()
-                taps[bundleID] = nil
+            guard let app = running[bundleID], let entry = volumes[bundleID] else {
+                releaseTap(bundleID)
                 continue
             }
             // A browser that spawns a new media child needs the tap rebuilt —
             // the old one keeps muting only the processes it was born with.
-            if tap.processObjectIDs != app.objectIDs {
-                tap.invalidate()
-                taps[bundleID] = nil
+            if tap.processObjectIDs != app.objectIDs || rebuildPendingSince[bundleID] != nil {
+                installTap(for: app, entry: entry)
             } else {
                 tap.updatePlaybackState(isPlaying: app.isPlaying)
             }
         }
         for (bundleID, entry) in volumes where !entry.isNeutral {
             guard taps[bundleID] == nil, let app = running[bundleID] else { continue }
-            createTap(for: app, entry: entry)
+            installTap(for: app, entry: entry)
         }
         syncRouteVolumes()
     }
@@ -252,80 +253,64 @@ final class MixerEngine {
         }
     }
 
-    private func createTap(for app: AudioApp, entry: AppVolume) {
-        // Per-app taps are suspended while multi-output plays: a tap aggregate
-        // pinned to another aggregate is unproven (the CLI probe's IO proc
-        // never fired), and a silently dead tap would mute the app outright.
-        // Saved volumes survive and re-apply once multi-output dissolves.
-        guard !multiOutput.isActive else { return }
-        let outputs: [ProcessTap.Output]
+    /// Make-before-break: the replacement starts before the old tap goes, so
+    /// the app is never left on its native output at full volume in between.
+    /// A failed replacement leaves a working old tap running; a broken one
+    /// holds the app silent while retries run, up to TapRebuildPolicy's limit.
+    private func installTap(for app: AudioApp, entry: AppVolume) {
+        let bundleID = app.bundleID
+        let old = taps[bundleID]
         do {
-            outputs = try resolvedOutputs(for: entry)
-        } catch {
-            // Transient device churn (output switching), not a permission issue.
-            Self.logger.error("Default device read failed: \(error.localizedDescription)")
-            return
-        }
-        // A routed app's loudness lives on its devices' own volume controls
-        // (one slider per pinned device), so its tap renders transparent — the
-        // app-level gain and mute apply only when it follows the default.
-        let routed = !entry.outputDeviceUIDs.isEmpty
-        do {
-            let tap = ProcessTap(
-                processObjectIDs: app.objectIDs,
-                volume: routed ? 1.0 : entry.volume,
-                isMuted: routed ? false : entry.isMuted
-            )
-            try tap.activate(outputs: outputs)
-            tap.onOutputResumed = { [weak self] in self?.processMonitor.refresh() }
-            tap.updatePlaybackState(isPlaying: app.isPlaying)
-            taps[app.bundleID] = tap
+            guard let tap = try makeTap(for: app, entry: entry, replacing: old) else {
+                releaseTap(bundleID)
+                return
+            }
+            taps[bundleID] = tap
+            rebuildPendingSince[bundleID] = nil
+            tapFailures = 0
             needsAudioCapturePermission = false
+            if let old { retire(old) }
         } catch {
-            Self.logger.error("Tap failed for \(app.bundleID): \(error.localizedDescription)")
+            Self.logger.error("Tap failed for \(bundleID): \(error.localizedDescription)")
             if let halError = error as? HALError, halError.isPermissionDenied {
                 needsAudioCapturePermission = true
+                releaseTap(bundleID)
+                return
+            }
+            scheduleTapRetry()
+            // A tap that still renders keeps attenuating the processes it has;
+            // only one that can't play anymore needs holding silent.
+            guard let old, old.isHeld || !old.isAlive else { return }
+            let since = rebuildPendingSince[bundleID] ?? .now
+            switch TapRebuildPolicy.brokenTap(failingSince: since, now: .now) {
+            case .hold:
+                rebuildPendingSince[bundleID] = since
+                old.holdSilent()
+            case .release:
+                releaseTap(bundleID)
             }
         }
-    }
-
-    /// The devices an app's tap should play through: its pinned route when
-    /// present, otherwise the system default. A pinned-but-absent device falls
-    /// back to the default so the app stays audible until it returns — the
-    /// stored route survives for when it does.
-    private func resolvedOutputs(for entry: AppVolume) throws -> [ProcessTap.Output] {
-        let present = entry.outputDeviceUIDs.compactMap { uid in deviceMonitor.devices.first { $0.uid == uid } }
-        // Clock leads: a Bluetooth clock drifts, so a wired/built-in member is
-        // preferred to drive the aggregate, mirroring multi-output.
-        guard let clock = MultiOutputPolicy.clock(among: present) else {
-            let id = try AudioObjectID.readDefaultOutputDevice()
-            return try [ProcessTap.Output(uid: id.readDeviceUID(), id: id)]
-        }
-        return ([clock] + present.filter { $0.uid != clock.uid })
-            .map { ProcessTap.Output(uid: $0.uid, id: $0.id) }
     }
 
     /// Rebuilds only the taps that no longer play where they should, so
     /// unrelated apps don't blip. Stale = resolved targets changed (object IDs
     /// too — devices re-publish under an old UID), aggregate died, or resolve
-    /// failed; a wedged tap keeps its app muted, dropping it un-mutes.
+    /// failed; a wedged tap keeps its app muted until its replacement runs.
     func reconcileTapRouting() {
         for (bundleID, tap) in taps {
             guard let entry = volumes[bundleID] else { continue }
             if let desired = try? resolvedOutputs(for: entry),
                desired == tap.activatedOutputs, tap.isAlive { continue }
-            tap.invalidate()
-            taps[bundleID] = nil
+            rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
         }
         syncTaps()
     }
 
     private func rebuildTap(for app: AudioApp, entry: AppVolume) {
-        if let tap = taps.removeValue(forKey: app.bundleID) {
-            tap.invalidate()
-        }
-        if !entry.isNeutral {
-            createTap(for: app, entry: entry)
+        if entry.isNeutral {
+            releaseTap(app.bundleID)
+        } else {
+            installTap(for: app, entry: entry)
         }
         syncRouteVolumes()
     }
