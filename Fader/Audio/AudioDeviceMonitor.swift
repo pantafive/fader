@@ -87,11 +87,44 @@ final class AudioDeviceMonitor {
     }
 
     func setDefault(_ device: AudioDevice) {
+        // Sampled before the switch — afterwards the two never match.
+        let effectsFollow = direction == .output && Self.soundEffectsFollowDefault()
         do {
             try AudioObjectID.system.write(direction.defaultDeviceSelector, value: device.id)
             defaultDeviceID = device.id
         } catch {
             Self.logger.error("Failed to set default device to \(device.name): \(error.localizedDescription)")
+            return
+        }
+        if effectsFollow {
+            moveSoundEffects(to: device)
+        }
+    }
+
+    /// macOS stores no readable "Play sound effects through: Selected Sound
+    /// Output Device" flag; Sound settings simply moves both devices at once.
+    /// So equal devices are read as that choice — a user who pinned effects
+    /// by hand to the device that happens to be the default gets them moved.
+    private static func soundEffectsFollowDefault() -> Bool {
+        var effects = AudioDeviceID.unknown
+        do {
+            try AudioObjectID.system.read(kAudioHardwarePropertyDefaultSystemOutputDevice, into: &effects)
+            return try effects == AudioObjectID.readDefaultOutputDevice()
+        } catch {
+            return false
+        }
+    }
+
+    /// AirPlay and aggregates can refuse the role; effects then stay put.
+    private func moveSoundEffects(to device: AudioDevice) {
+        var eligible: UInt32 = 0
+        try? device.id.read(kAudioDevicePropertyDeviceCanBeDefaultSystemDevice,
+                            scope: kAudioDevicePropertyScopeOutput, into: &eligible)
+        guard eligible != 0 else { return }
+        do {
+            try AudioObjectID.system.write(kAudioHardwarePropertyDefaultSystemOutputDevice, value: device.id)
+        } catch {
+            Self.logger.error("Failed to move sound effects to \(device.name): \(error.localizedDescription)")
         }
     }
 
