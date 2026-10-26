@@ -47,6 +47,15 @@ final class StatusItemMenuController: NSObject {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
 
+        let outputIcon = NSMenuItem(
+            title: "Show Output Device in Menu Bar",
+            action: #selector(toggleOutputIcon),
+            keyEquivalent: ""
+        )
+        outputIcon.target = self
+        outputIcon.state = UserDefaults.standard.bool(forKey: MenuBarLabel.showsOutputIconKey) ? .on : .off
+        menu.addItem(outputIcon)
+
         menu.addItem(.separator())
 
         let checkTitle = updater.stagedVersion.map { "Restart to Update to \($0)" }
@@ -94,6 +103,11 @@ final class StatusItemMenuController: NSObject {
         } catch {
             // The next menu open re-reads the real status; nothing to undo.
         }
+    }
+
+    @objc private func toggleOutputIcon() {
+        let defaults = UserDefaults.standard
+        defaults.set(!defaults.bool(forKey: MenuBarLabel.showsOutputIconKey), forKey: MenuBarLabel.showsOutputIconKey)
     }
 
     @objc private func checkForUpdates() {

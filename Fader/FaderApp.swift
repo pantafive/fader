@@ -112,7 +112,7 @@ struct FaderApp: App {
                 .environment(engine)
                 .environment(updater)
         } label: {
-            Image(nsImage: Self.menuBarIcon)
+            MenuBarLabel(engine: engine, appIcon: Self.menuBarIcon)
         }
         .menuBarExtraStyle(.window)
     }
