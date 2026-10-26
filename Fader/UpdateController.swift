@@ -132,8 +132,8 @@ final class UpdateController {
     /// the audio guard is non-negotiable.
     @discardableResult
     private func tryQuietRelaunch() -> Bool {
-        guard relaunchHandler != nil, !Self.isRelaunchingForUpdate else { return false }
-        guard !NSApp.isActive, !Self.audioIsPlaying() else { return false }
+        guard relaunchHandler != nil, !Self.isRelaunchingForUpdate, !NSApp.isActive,
+              !Self.audioIsPlaying() else { return false }
         relaunch()
         return true
     }

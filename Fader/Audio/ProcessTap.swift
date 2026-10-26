@@ -98,8 +98,7 @@ final class ProcessTap: @unchecked Sendable {
     /// the app fans out to several devices at once.
     @MainActor
     func activate(outputs: [Output]) throws {
-        guard !aggregateID.isValid else { return }
-        guard let clockUID = outputs.first?.uid else { return }
+        guard !aggregateID.isValid, let clockUID = outputs.first?.uid else { return }
         activatedOutputs = outputs
 
         let description = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)

@@ -60,7 +60,7 @@ enum DevicePriorityPolicy {
             if let fallback = presentUIDs
                 .filter(eligible)
                 .min(by: { rank($0, priority: priority) < rank($1, priority: priority) }),
-                fallback != currentDefaultUID {
+               fallback != currentDefaultUID {
                 return .fallback(toUID: fallback)
             }
             return .stay
