@@ -36,8 +36,7 @@ final class MixerEngine {
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    /// Taps that stopped playing where they should, with when that was found.
-    @ObservationIgnored var rebuildPendingSince: [String: ContinuousClock.Instant] = [:]
+    @ObservationIgnored var rebuildPending: Set<String> = []
     @ObservationIgnored var tapFailures = 0
     @ObservationIgnored var retryTask: Task<Void, Never>?
     @ObservationIgnored private var neutralTeardownTasks: [String: Task<Void, Never>] = [:]
@@ -148,7 +147,7 @@ final class MixerEngine {
             tap.invalidate()
         }
         taps.removeAll()
-        rebuildPendingSince.removeAll()
+        rebuildPending.removeAll()
         routeVolumes.removeAll()
     }
 
@@ -242,7 +241,7 @@ final class MixerEngine {
             }
             // A browser that spawns a new media child needs the tap rebuilt —
             // the old one keeps muting only the processes it was born with.
-            if tap.processObjectIDs != app.objectIDs || rebuildPendingSince[bundleID] != nil {
+            if tap.processObjectIDs != app.objectIDs || rebuildPending.contains(bundleID) {
                 installTap(for: app, entry: entry)
             } else {
                 tap.updatePlaybackState(isPlaying: app.isPlaying)
@@ -272,8 +271,6 @@ final class MixerEngine {
 
     /// Make-before-break: the replacement starts before the old tap goes, so
     /// the app is never left on its native output at full volume in between.
-    /// A failed replacement leaves a working old tap running; a broken one
-    /// holds the app silent while retries run, up to TapRebuildPolicy's limit.
     private func installTap(for app: AudioApp, entry: AppVolume) {
         let bundleID = app.bundleID
         let old = taps[bundleID]
@@ -283,28 +280,31 @@ final class MixerEngine {
                 return
             }
             taps[bundleID] = tap
-            rebuildPendingSince[bundleID] = nil
-            tapFailures = 0
-            needsAudioCapturePermission = false
+            if tap.isHeld {
+                rebuildPending.insert(bundleID)
+                scheduleTapRetry()
+            } else {
+                rebuildPending.remove(bundleID)
+                tapFailures = 0
+                needsAudioCapturePermission = false
+            }
             if let old { retire(old) }
         } catch {
             Self.logger.error("Tap failed for \(bundleID): \(error.localizedDescription)")
             if let halError = error as? HALError, halError.isPermissionDenied {
                 needsAudioCapturePermission = true
-                releaseTap(bundleID)
-                return
+                if old == nil { return }
             }
             scheduleTapRetry()
             // A tap that still renders keeps attenuating the processes it has;
             // only one that can't play anymore needs holding silent.
-            guard let old, old.isHeld || !old.isAlive else { return }
-            let since = rebuildPendingSince[bundleID] ?? .now
-            switch TapRebuildPolicy.brokenTap(failingSince: since, now: .now) {
+            guard let old else { return }
+            switch TapRebuildPolicy.brokenTap(isAlive: old.isAlive, isHeld: old.isHeld) {
             case .hold:
-                rebuildPendingSince[bundleID] = since
+                rebuildPending.insert(bundleID)
                 old.holdSilent()
-            case .release:
-                releaseTap(bundleID)
+            case .keepPlaying:
+                break
             }
         }
     }
@@ -318,7 +318,7 @@ final class MixerEngine {
             guard let entry = volumes[bundleID] else { continue }
             if let desired = try? resolvedOutputs(for: entry),
                desired == tap.activatedOutputs, tap.isAlive { continue }
-            rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+            rebuildPending.insert(bundleID)
         }
         syncTaps()
     }

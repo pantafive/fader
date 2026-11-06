@@ -101,23 +101,25 @@ struct BugAutoSwitchArmingTests {
 //   timing is what is pinned here.
 @Suite("bugfixes: tap rebuild volume spikes")
 struct BugTapRebuildSpikeTests {
-    @Test("bug: a just-failed rebuild holds the app silent instead of releasing it")
-    func bugFreshFailureHolds() {
-        let failed = ContinuousClock.Instant.now
-
-        let decision = TapRebuildPolicy.brokenTap(failingSince: failed, now: failed + .seconds(2))
+    @Test("bug: a dead tap stays silent during failed recovery")
+    func bugDeadTapHolds() {
+        let decision = TapRebuildPolicy.brokenTap(isAlive: false, isHeld: false)
 
         #expect(decision == .hold)
     }
 
-    @Test("a rebuild failing past the hold limit releases the app")
-    func longFailureReleases() {
-        let failed = ContinuousClock.Instant.now
+    @Test("bug: an existing aggregate must not release a held tap during retries")
+    func bugHeldTapStaysSilent() {
+        let decision = TapRebuildPolicy.brokenTap(isAlive: true, isHeld: true)
 
-        let decision = TapRebuildPolicy.brokenTap(failingSince: failed,
-                                                  now: failed + TapRebuildPolicy.holdLimit)
+        #expect(decision == .hold)
+    }
 
-        #expect(decision == .release)
+    @Test("a failed replacement leaves working attenuation playing")
+    func workingTapKeepsPlaying() {
+        let decision = TapRebuildPolicy.brokenTap(isAlive: true, isHeld: false)
+
+        #expect(decision == .keepPlaying)
     }
 
     @Test("bug: retries start fast and back off to the cap", arguments: [
