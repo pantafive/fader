@@ -49,11 +49,11 @@ extension MixerEngine {
     /// Releasing restores the app's native output at full volume.
     func releaseTap(_ bundleID: String) {
         taps.removeValue(forKey: bundleID)?.invalidate()
-        rebuildPendingSince[bundleID] = nil
+        rebuildPending.remove(bundleID)
     }
 
     func rebuildBrokenTap(_ bundleID: String) {
-        rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+        rebuildPending.insert(bundleID)
         syncTaps()
     }
 

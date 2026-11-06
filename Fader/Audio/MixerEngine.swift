@@ -36,8 +36,7 @@ final class MixerEngine {
     @ObservationIgnored private var deviceListener: HALListener?
     @ObservationIgnored private var serviceRestartListener: HALListener?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    /// Taps that stopped playing where they should, with when that was found.
-    @ObservationIgnored var rebuildPendingSince: [String: ContinuousClock.Instant] = [:]
+    @ObservationIgnored var rebuildPending: Set<String> = []
     @ObservationIgnored var tapFailures = 0
     @ObservationIgnored var retryTask: Task<Void, Never>?
     @ObservationIgnored private var neutralTeardownTasks: [String: Task<Void, Never>] = [:]
@@ -148,7 +147,7 @@ final class MixerEngine {
             tap.invalidate()
         }
         taps.removeAll()
-        rebuildPendingSince.removeAll()
+        rebuildPending.removeAll()
         routeVolumes.removeAll()
     }
 
@@ -242,7 +241,7 @@ final class MixerEngine {
             }
             // A browser that spawns a new media child needs the tap rebuilt —
             // the old one keeps muting only the processes it was born with.
-            if tap.processObjectIDs != app.objectIDs || rebuildPendingSince[bundleID] != nil {
+            if tap.processObjectIDs != app.objectIDs || rebuildPending.contains(bundleID) {
                 installTap(for: app, entry: entry)
             } else {
                 tap.updatePlaybackState(isPlaying: app.isPlaying)
@@ -282,10 +281,10 @@ final class MixerEngine {
             }
             taps[bundleID] = tap
             if tap.isHeld {
-                rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+                rebuildPending.insert(bundleID)
                 scheduleTapRetry()
             } else {
-                rebuildPendingSince[bundleID] = nil
+                rebuildPending.remove(bundleID)
                 tapFailures = 0
                 needsAudioCapturePermission = false
             }
@@ -302,7 +301,7 @@ final class MixerEngine {
             guard let old else { return }
             switch TapRebuildPolicy.brokenTap(isAlive: old.isAlive, isHeld: old.isHeld) {
             case .hold:
-                rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+                rebuildPending.insert(bundleID)
                 old.holdSilent()
             case .keepPlaying:
                 break
@@ -319,7 +318,7 @@ final class MixerEngine {
             guard let entry = volumes[bundleID] else { continue }
             if let desired = try? resolvedOutputs(for: entry),
                desired == tap.activatedOutputs, tap.isAlive { continue }
-            rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+            rebuildPending.insert(bundleID)
         }
         syncTaps()
     }
