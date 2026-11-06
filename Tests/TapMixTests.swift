@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 /// Runs TapMix.mix over value arrays; converged gain (gain == target) unless
@@ -89,5 +90,23 @@ struct BugTapMixChannelTests {
         }
         #expect(result.output[0] == 0.5)
         #expect(result.gain > 0.99)
+    }
+
+    @Test("bug: recovery fades from silence without exceeding the saved volume")
+    func bugRecoveryRespectsSavedVolume() {
+        let savedGain = VolumeTaper.gain(position: 0.5)
+        let input = [Float](repeating: 1, count: 9600)
+        let ramp = 1 - exp(-1 / (Float(48000) * 0.030))
+
+        let result = mixed(input: input, inputChannels: 2, outputChannels: 2, outputCount: 9600,
+                           gain: 0, targetGain: savedGain, ramp: ramp)
+
+        #expect(result.output[0] > 0)
+        #expect(result.output[0] < 0.001)
+        #expect(result.output.allSatisfy { $0 >= 0 && $0 <= savedGain })
+        #expect(result.gain > 0.12)
+        for (left, right) in zip(result.output, result.output.dropFirst()) {
+            #expect(left <= right)
+        }
     }
 }

@@ -19,7 +19,16 @@ extension MixerEngine {
             isMuted: routed ? false : entry.isMuted
         )
         if old != nil { tap.rampInFromSilence() }
-        try tap.activate(outputs: outputs)
+        do {
+            try tap.activate(outputs: outputs)
+        } catch {
+            guard old == nil, tap.tapID.isValid else { throw error }
+            ProcessTap.logger.error("Tap activation failed; holding output silent: \(error.localizedDescription)")
+            tap.holdSilent()
+        }
+        if tap.isHeld, old != nil {
+            throw HALError.operation(kAudioDeviceUnsupportedFormatError, "verify aggregate stream format")
+        }
         let bundleID = app.bundleID
         tap.onOutputResumed = { [weak self] in self?.processMonitor.refresh() }
         tap.onBroken = { [weak self] in self?.rebuildBrokenTap(bundleID) }

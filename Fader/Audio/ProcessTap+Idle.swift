@@ -100,8 +100,6 @@ extension ProcessTap {
         }
     }
 
-    /// Keeps the app muted with nothing rendering it, until a replacement
-    /// tap takes over or MixerEngine gives up and releases it.
     @MainActor
     func holdSilent() {
         isHeld = true

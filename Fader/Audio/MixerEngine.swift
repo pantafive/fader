@@ -272,8 +272,6 @@ final class MixerEngine {
 
     /// Make-before-break: the replacement starts before the old tap goes, so
     /// the app is never left on its native output at full volume in between.
-    /// A failed replacement leaves a working old tap running; a broken one
-    /// holds the app silent while retries run, up to TapRebuildPolicy's limit.
     private func installTap(for app: AudioApp, entry: AppVolume) {
         let bundleID = app.bundleID
         let old = taps[bundleID]
@@ -283,28 +281,31 @@ final class MixerEngine {
                 return
             }
             taps[bundleID] = tap
-            rebuildPendingSince[bundleID] = nil
-            tapFailures = 0
-            needsAudioCapturePermission = false
+            if tap.isHeld {
+                rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
+                scheduleTapRetry()
+            } else {
+                rebuildPendingSince[bundleID] = nil
+                tapFailures = 0
+                needsAudioCapturePermission = false
+            }
             if let old { retire(old) }
         } catch {
             Self.logger.error("Tap failed for \(bundleID): \(error.localizedDescription)")
             if let halError = error as? HALError, halError.isPermissionDenied {
                 needsAudioCapturePermission = true
-                releaseTap(bundleID)
-                return
+                if old == nil { return }
             }
             scheduleTapRetry()
             // A tap that still renders keeps attenuating the processes it has;
             // only one that can't play anymore needs holding silent.
-            guard let old, old.isHeld || !old.isAlive else { return }
-            let since = rebuildPendingSince[bundleID] ?? .now
-            switch TapRebuildPolicy.brokenTap(failingSince: since, now: .now) {
+            guard let old else { return }
+            switch TapRebuildPolicy.brokenTap(isAlive: old.isAlive, isHeld: old.isHeld) {
             case .hold:
-                rebuildPendingSince[bundleID] = since
+                rebuildPendingSince[bundleID] = rebuildPendingSince[bundleID] ?? .now
                 old.holdSilent()
-            case .release:
-                releaseTap(bundleID)
+            case .keepPlaying:
+                break
             }
         }
     }
