@@ -7,12 +7,12 @@ struct InputReconnectPolicy {
         var fallbackUID: String?
     }
 
-    private static let reconnectWindow: TimeInterval = 10
-    private var previousDevices: [String: UInt32] = [:]
+    private static let reconnectWindow: TimeInterval = 1
+    private var previousDevices: Set<String> = []
     private var previousDefaultUID: String?
     private var pending: Pending?
 
-    mutating func refresh(devices: [String: UInt32], defaultUID: String?, now: Date) -> String? {
+    mutating func refresh(devices: Set<String>, defaultUID: String?, now: Date) -> String? {
         defer {
             previousDevices = devices
             previousDefaultUID = defaultUID
@@ -23,7 +23,7 @@ struct InputReconnectPolicy {
                 (waiting.fallbackUID != nil && defaultUID != nil &&
                     defaultUID != waiting.fallbackUID && defaultUID != waiting.uid) {
                 pending = nil
-            } else if devices[waiting.uid] != nil {
+            } else if devices.contains(waiting.uid) {
                 if defaultUID == waiting.uid {
                     pending = nil
                     return nil
@@ -35,16 +35,12 @@ struct InputReconnectPolicy {
         }
 
         guard pending == nil, let previousDefaultUID,
-              let previousID = previousDevices[previousDefaultUID],
-              devices[previousDefaultUID] == nil ||
-              (devices[previousDefaultUID] != previousID && defaultUID != previousDefaultUID)
+              previousDevices.contains(previousDefaultUID), !devices.contains(previousDefaultUID)
         else { return nil }
 
-        // A USB reset can finish within the monitor's coalescing interval.
-        // Its UID survives but its HAL object ID changes.
         pending = Pending(uid: previousDefaultUID, deadline: now.addingTimeInterval(Self.reconnectWindow),
                           fallbackUID: defaultUID == previousDefaultUID ? nil : defaultUID)
-        return devices[previousDefaultUID] == nil ? nil : previousDefaultUID
+        return nil
     }
 
     mutating func cancel() {

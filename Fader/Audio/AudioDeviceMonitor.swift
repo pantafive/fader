@@ -191,7 +191,7 @@ final class AudioDeviceMonitor {
         })
 
         let reconnectUID = direction == .input ? inputReconnect.refresh(
-            devices: Dictionary(uniqueKeysWithValues: devices.map { ($0.uid, $0.id) }),
+            devices: Set(devices.map(\.uid)),
             defaultUID: defaultUID, now: Date()
         ) : nil
         if let reconnectUID, let device = devices.first(where: { $0.uid == reconnectUID }) {
@@ -209,6 +209,10 @@ final class AudioDeviceMonitor {
     }
 
     private func scheduleRefresh() {
+        if direction == .input {
+            refresh()
+            return
+        }
         guard refreshTask == nil else { return }
         refreshTask = Task { @MainActor [weak self] in
             do {
