@@ -27,6 +27,7 @@ final class AudioDeviceMonitor {
     /// "appears" at once and none of that is a hotplug event.
     @ObservationIgnored private var hasBaseline = false
     @ObservationIgnored private var lastDefaultUID: String?
+    @ObservationIgnored private var inputReconnect = InputReconnectPolicy()
     /// HAL emits device/default changes in bursts (one per aggregate member and
     /// property). Collapse one main-queue burst into one enumeration instead of
     /// queueing a full synchronous refresh for every callback.
@@ -71,6 +72,7 @@ final class AudioDeviceMonitor {
         devices = []
         defaultDeviceID = .unknown
         hasBaseline = false
+        inputReconnect = InputReconnectPolicy()
         installListeners()
         refresh()
     }
@@ -87,11 +89,18 @@ final class AudioDeviceMonitor {
     }
 
     func setDefault(_ device: AudioDevice) {
+        inputReconnect.cancel()
+        switchDefault(device)
+    }
+
+    private func switchDefault(_ device: AudioDevice) {
         // Sampled before the switch — afterwards the two never match.
         let effectsFollow = direction == .output && Self.soundEffectsFollowDefault()
         do {
             try AudioObjectID.system.write(direction.defaultDeviceSelector, value: device.id)
             defaultDeviceID = device.id
+            lastDefaultUID = device.uid
+            inputReconnect.didSwitch(to: device.uid)
         } catch {
             Self.logger.error("Failed to set default device to \(device.name): \(error.localizedDescription)")
             return
@@ -181,8 +190,17 @@ final class AudioDeviceMonitor {
             return device
         })
 
-        autoSwitch(previousUIDs: previousUIDs, defaultUID: defaultUID)
-        lastDefaultUID = defaultUID
+        let reconnectUID = direction == .input ? inputReconnect.refresh(
+            devices: Dictionary(uniqueKeysWithValues: devices.map { ($0.uid, $0.id) }),
+            defaultUID: defaultUID, now: Date()
+        ) : nil
+        if let reconnectUID, let device = devices.first(where: { $0.uid == reconnectUID }) {
+            Self.logger.info("Microphone reconnected; restoring default input")
+            switchDefault(device)
+        } else {
+            autoSwitch(previousUIDs: previousUIDs, defaultUID: defaultUID)
+        }
+        lastDefaultUID = devices.first(where: { $0.id == defaultDeviceID })?.uid
         hasBaseline = true
     }
 
@@ -229,11 +247,11 @@ final class AudioDeviceMonitor {
         case let .fallback(toUID: uid):
             guard let device = devices.first(where: { $0.uid == uid }) else { return }
             Self.logger.info("Default device disappeared; switching to \(device.name)")
-            setDefault(device)
+            switchDefault(device)
         case let .hotplug(toUID: uid):
             guard let device = devices.first(where: { $0.uid == uid }) else { return }
             Self.logger.info("Higher-priority device connected; switching to \(device.name)")
-            setDefault(device)
+            switchDefault(device)
         }
     }
 
