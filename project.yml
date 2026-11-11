@@ -103,6 +103,7 @@ targets:
       - Fader/Audio/AudioDevice.swift
       - Fader/Audio/AudioApp.swift
       - Fader/Audio/DevicePriorityPolicy.swift
+      - Fader/Audio/InputReconnectPolicy.swift
       - Fader/Audio/MultiOutputPolicy.swift
       - Fader/Audio/TapRebuildPolicy.swift
       - Fader/Audio/VolumeTaper.swift
