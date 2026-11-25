@@ -41,29 +41,35 @@ struct MixerView: View {
                         pairZoneFrame = frame
                     }
                 if engine.isStarted, hasOutputListRows {
-                    DeviceListSection(
-                        monitor: engine.deviceMonitor,
-                        excludedUIDs: activeOutputUIDs.union(routedOutputUIDs),
-                        pairZone: pairZoneFrame,
-                        onPairHover: { isPairTarget = $0 },
-                        onPair: { engine.pair($0) },
-                        appZones: appRouteZones,
-                        onRouteHover: { routeTargetBundleID = $0 },
-                        onRoute: { bundleID, device in
-                            if let app = engine.processMonitor.apps.first(where: { $0.bundleID == bundleID }) {
-                                engine.route(app, to: device)
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        sectionLabel("Output")
+                        DeviceListSection(
+                            monitor: engine.deviceMonitor,
+                            excludedUIDs: activeOutputUIDs.union(routedOutputUIDs),
+                            pairZone: pairZoneFrame,
+                            onPairHover: { isPairTarget = $0 },
+                            onPair: { engine.pair($0) },
+                            appZones: appRouteZones,
+                            onRouteHover: { routeTargetBundleID = $0 },
+                            onRoute: { bundleID, device in
+                                if let app = engine.processMonitor.apps.first(where: { $0.bundleID == bundleID }) {
+                                    engine.route(app, to: device)
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             } else {
                 inputVolumeSection
                 if engine.isStarted, engine.inputDeviceMonitor.devices.count > 1 {
+                    Divider()
                     DeviceListSection(monitor: engine.inputDeviceMonitor)
                 }
             }
 
             if engine.isStarted, !disconnectedBluetooth.isEmpty {
+                Divider()
                 bluetoothSection
             }
 
@@ -112,34 +118,17 @@ struct MixerView: View {
         return engine.deviceMonitor.devices.contains { !excluded.contains($0.uid) }
     }
 
-    /// Full-width segmented switch — the native compact picker is a fiddly
-    /// click target for the popover's most-used control.
+    /// Native segmented control matching System Settings.
     private var directionPicker: some View {
-        HStack(spacing: 2) {
-            directionTab(.output, icon: "speaker.wave.2.fill", label: "Output")
-            directionTab(.input, icon: "mic.fill", label: "Microphone")
+        Picker("Audio Direction", selection: $direction) {
+            Text("Output")
+                .tag(AudioDirection.output)
+            Text("Microphone")
+                .tag(AudioDirection.input)
         }
-        .padding(2)
-        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func directionTab(_ value: AudioDirection, icon: String, label: String) -> some View {
-        Button {
-            direction = value
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(direction == value ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
-                .background(
-                    direction == value ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
-                    in: RoundedRectangle(cornerRadius: 6)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .help(label)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
     }
 
     /// "Disconnected" means absent from the HAL — that's what decides whether
@@ -156,35 +145,33 @@ struct MixerView: View {
     private var bluetoothSection: some View {
         VStack(alignment: .leading, spacing: DeviceListSection.rowSpacing) {
             sectionLabel("Bluetooth")
+                .padding(.horizontal, 6)
             ForEach(disconnectedBluetooth) { device in
                 BluetoothRowView(device: device)
             }
         }
-        .padding(.horizontal, -8)
+        .padding(.horizontal, -6)
     }
 
-    /// Uppercase caps that label a free-floating list section (Bluetooth,
-    /// Apps). The output/input volume groups keep their bolder box titles —
-    /// a heading for a control group reads differently from a list label.
     private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .textCase(.uppercase)
-            .padding(.horizontal, 8)
+        NativeLabel(
+            text: text,
+            font: .systemFont(ofSize: 12, weight: .medium),
+            color: .secondaryLabelColor
+        )
     }
 
     private var inputVolumeSection: some View {
         let inputVolume = engine.inputVolume
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Input")
-                    .font(.system(size: 12, weight: .semibold))
+                NativeLabel(text: "Input", font: .systemFont(ofSize: 13, weight: .semibold))
                 Spacer()
-                Text(inputVolume.deviceName)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                NativeLabel(
+                    text: inputVolume.deviceName,
+                    font: .systemFont(ofSize: 12, weight: .regular),
+                    color: .secondaryLabelColor
+                )
             }
             // Input gain is absent or read-only on plenty of devices (gain
             // knob lives in hardware) — a live-looking slider that snaps back
@@ -199,11 +186,11 @@ struct MixerView: View {
                 onIconTap: inputVolume.canMute ? { inputVolume.toggleMute() } : nil
             )
             .disabled(!inputVolume.canSetVolume)
-            .opacity(inputVolume.canSetVolume ? 1.0 : 0.4)
+            .opacity(inputVolume.canSetVolume ? 1.0 : 0.45)
             if !inputVolume.canSetVolume {
                 Text("Gain is controlled on the device")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }

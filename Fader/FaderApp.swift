@@ -97,11 +97,57 @@ struct FaderApp: App {
         exit(0)
     }
 
-    /// SwiftUI's name-based Image fails to resolve loose bundle resources in
-    /// a MenuBarExtra label; load via AppKit. isTemplate makes the system
-    /// tint the mark to match the menu bar theme.
+    /// Resolution-independent vector template icon drawn directly with
+    /// AppKit so it stays razor-sharp at both 1x and 2x display scales.
     private static let menuBarIcon: NSImage = {
-        let image = NSImage(named: "MenuBarIconTemplate") ?? NSImage()
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { _ in
+            let faders: [(x: CGFloat, knob: CGFloat)] = [
+                (4, 0.30),
+                (9, 0.72),
+                (14, 0.48),
+            ]
+            let trackWidth: CGFloat = 1.6
+            let trackTop: CGFloat = 16
+            let trackBottom: CGFloat = 2
+            let knobRadius: CGFloat = 2.4
+
+            for fader in faders {
+                let knobCenterY = trackBottom + (trackTop - trackBottom) * fader.knob
+
+                NSColor.black.withAlphaComponent(0.35).setFill()
+                NSBezierPath(
+                    roundedRect: NSRect(
+                        x: fader.x - trackWidth / 2,
+                        y: knobCenterY,
+                        width: trackWidth,
+                        height: trackTop - knobCenterY
+                    ),
+                    xRadius: trackWidth / 2,
+                    yRadius: trackWidth / 2
+                ).fill()
+
+                NSColor.black.setFill()
+                NSBezierPath(
+                    roundedRect: NSRect(
+                        x: fader.x - trackWidth / 2,
+                        y: trackBottom,
+                        width: trackWidth,
+                        height: knobCenterY - trackBottom
+                    ),
+                    xRadius: trackWidth / 2,
+                    yRadius: trackWidth / 2
+                ).fill()
+
+                NSBezierPath(ovalIn: NSRect(
+                    x: fader.x - knobRadius,
+                    y: knobCenterY - knobRadius,
+                    width: knobRadius * 2,
+                    height: knobRadius * 2
+                )).fill()
+            }
+            return true
+        }
         image.isTemplate = true
         return image
     }()

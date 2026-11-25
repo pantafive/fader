@@ -19,6 +19,46 @@ extension AudioDevice {
     }
 }
 
+/// Circular SF Symbol badge matching macOS Control Center Sound/Bluetooth rows:
+/// accent-filled when active, subtle translucent circle when inactive.
+struct DeviceIconBadge: View {
+    enum Style {
+        case active
+        case inactive
+        case disconnected
+    }
+
+    let systemName: String
+    let style: Style
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(backgroundColor)
+                .frame(width: 26, height: 26)
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(foregroundStyle)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch style {
+        case .active: Color.accentColor
+        case .inactive: Color.primary.opacity(0.08)
+        case .disconnected: Color.primary.opacity(0.05)
+        }
+    }
+
+    private var foregroundStyle: AnyShapeStyle {
+        switch style {
+        case .active: AnyShapeStyle(.white)
+        case .inactive: AnyShapeStyle(.primary)
+        case .disconnected: AnyShapeStyle(.secondary)
+        }
+    }
+}
+
 /// One output device: transport icon, name, checkmark on the active one.
 /// Clicking switches the system default output. Bluetooth devices get a
 /// disconnect button on hover. With a `reorder` handler the whole row drags
@@ -27,7 +67,7 @@ extension AudioDevice {
 /// distinct from grabs.
 struct DeviceRowView: View {
     /// Vertical rhythm of the device list; MixerView's drag math relies on it.
-    static let rowHeight: CGFloat = 28
+    static let rowHeight: CGFloat = 34
 
     /// Translation drives the reorder math; the cursor location (global
     /// space, same as the pair zone's measured frame) decides drops into the
@@ -63,37 +103,35 @@ struct DeviceRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: device.symbolName(direction: monitor.direction, bluetoothPeer: bluetoothPeer))
-                .font(.system(size: 13))
-                .foregroundStyle(isActive ? Color.accentColor : .secondary)
-                .frame(width: 18)
-            Text(device.name)
-                .font(.system(size: 12, weight: isActive ? .semibold : .regular))
-                .lineLimit(1)
+        HStack(spacing: 10) {
+            DeviceIconBadge(
+                systemName: device.symbolName(direction: monitor.direction, bluetoothPeer: bluetoothPeer),
+                style: isActive ? .active : .inactive
+            )
+            NativeLabel(text: device.name)
             Spacer()
             if let peer = bluetoothPeer, showsHover {
                 Button {
                     engine.bluetooth.disconnect(peer)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 .help("Disconnect")
             } else if isActive {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .frame(height: Self.rowHeight)
-        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
         .background(
-            showsHover ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear),
-            in: RoundedRectangle(cornerRadius: 6)
+            showsHover ? AnyShapeStyle(.primary.opacity(0.07)) : AnyShapeStyle(.clear),
+            in: RoundedRectangle(cornerRadius: 8)
         )
         .onHover { isHovering = $0 }
         .onTapGesture {
@@ -203,31 +241,25 @@ struct BluetoothRowView: View {
         Button {
             engine.connectBluetooth(device)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: device.symbolName)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 18)
-                Text(device.name)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            HStack(spacing: 10) {
+                DeviceIconBadge(systemName: device.symbolName, style: .disconnected)
+                NativeLabel(text: device.name, color: .secondaryLabelColor)
                 Spacer()
                 if isBusy {
                     ProgressView()
                         .controlSize(.mini)
                 } else if hovered {
                     Text("Connect")
-                        .font(.system(size: 11))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(Color.accentColor)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 6)
+            .frame(height: DeviceRowView.rowHeight)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
             .background(
-                hovered ? AnyShapeStyle(.quaternary.opacity(0.6)) : AnyShapeStyle(.clear),
-                in: RoundedRectangle(cornerRadius: 6)
+                hovered ? AnyShapeStyle(.primary.opacity(0.07)) : AnyShapeStyle(.clear),
+                in: RoundedRectangle(cornerRadius: 8)
             )
         }
         .buttonStyle(.plain)

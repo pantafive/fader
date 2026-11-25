@@ -14,11 +14,11 @@ struct AppRouteZonePreferenceKey: PreferenceKey {
 struct AppRowView: View {
     /// Vertical rhythm of a plain (unrouted) row — name line plus its slider;
     /// MixerView's scroll-frame height relies on it, like DeviceRowView's.
-    static let rowHeight: CGFloat = 53
+    static let rowHeight: CGFloat = 50
     /// A routed row instead sizes to its name line plus the device card: this
     /// header part, then one `routeDeviceHeight` per pinned device.
-    static let routedHeaderHeight: CGFloat = 40
-    static let routeDeviceHeight: CGFloat = 48
+    static let routedHeaderHeight: CGFloat = 42
+    static let routeDeviceHeight: CGFloat = 46
 
     @Environment(MixerEngine.self) private var engine
     let app: AudioApp
@@ -35,18 +35,16 @@ struct AppRowView: View {
 
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Image(nsImage: app.icon)
-                    .resizable()
-                    .frame(width: 18, height: 18)
-                Text(app.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
+                NativeAppIcon(image: app.icon, size: 20)
+                    .frame(width: 20, height: 20)
+                NativeLabel(text: app.name)
                 Spacer()
                 // A routed app's loudness lives on its per-device sliders, so
                 // the app-level percentage gives way to them.
                 if routeUIDs.isEmpty {
-                    Text(entry.isMuted ? "muted" : "\(Int(entry.volume * 100))%")
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    Text(entry.isMuted ? "Muted" : "\(Int(entry.volume * 100))%")
+                        .font(.caption)
+                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText())
                 }
@@ -68,7 +66,7 @@ struct AppRowView: View {
                 routeCard(routeUIDs)
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 0)
         .background(
             isRouteTarget ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(.clear),
             in: RoundedRectangle(cornerRadius: 8)
@@ -100,7 +98,7 @@ struct AppRowView: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// One pinned device: name with a tap-to-clear ✕, then its own volume
@@ -141,7 +139,7 @@ struct AppRowView: View {
                 get: { volume.volume },
                 set: { volume.setVolume($0) }
             ),
-            icon: volume.isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill",
+            icon: volume.isMuted ? "speaker.slash.fill" : "speaker.fill",
             iconDimmed: volume.isMuted,
             onIconTap: volume.canMute ? { volume.toggleMute() } : nil
         )
@@ -150,13 +148,7 @@ struct AppRowView: View {
     }
 
     private func sliderIcon(_ entry: AppVolume) -> String {
-        if entry.isMuted { return "speaker.slash.fill" }
-        switch entry.volume {
-        case 0: return "speaker.fill"
-        case ..<0.34: return "speaker.wave.1.fill"
-        case ..<0.67: return "speaker.wave.2.fill"
-        default: return "speaker.wave.3.fill"
-        }
+        entry.isMuted ? "speaker.slash.fill" : "speaker.fill"
     }
 }
 
@@ -167,12 +159,9 @@ struct RecordingAppRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(nsImage: app.icon)
-                .resizable()
-                .frame(width: 18, height: 18)
-            Text(app.name)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
+            NativeAppIcon(image: app.icon, size: 20)
+                .frame(width: 20, height: 20)
+            NativeLabel(text: app.name)
             Spacer()
             Image(systemName: "mic.fill")
                 .font(.system(size: 11))
