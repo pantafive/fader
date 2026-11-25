@@ -38,7 +38,8 @@ struct ActiveOutputsSection: View {
                 }
             }
         }
-        .overlay { if isPairTarget { dropHint } }
+        .opacity(isPairTarget ? 0.15 : 1.0)
+        .overlay { if isPairTarget { dropHint.padding(-6) } }
     }
 
     private func activeRow(_ row: Row) -> some View {
