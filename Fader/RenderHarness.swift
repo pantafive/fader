@@ -101,11 +101,48 @@
                 // Outermost so the dark scheme reaches the background and chrome too.
                 .environment(\.colorScheme, scheme)
 
-            let renderer = ImageRenderer(content: view)
-            // 4x so the README compositor can supersample: it overlaps these and
-            // downscales the final hero with LANCZOS for the smoothest edges/text.
-            renderer.scale = 4
-            let image = renderer.nsImage
+            let hosting = NSHostingView(rootView: view)
+            hosting.appearance = NSAppearance(named: appearance)
+            let fittingSize = hosting.fittingSize
+            let bounds = NSRect(origin: .zero, size: fittingSize)
+            hosting.frame = bounds
+
+            let window = NSWindow(
+                contentRect: bounds,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.appearance = NSAppearance(named: appearance)
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.contentView = hosting
+            hosting.layoutSubtreeIfNeeded()
+
+            let scale: CGFloat = 2
+            let pixelWidth = max(Int((bounds.width * scale).rounded()), 1)
+            let pixelHeight = max(Int((bounds.height * scale).rounded()), 1)
+            let image: NSImage?
+            if let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: pixelWidth,
+                pixelsHigh: pixelHeight,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) {
+                rep.size = bounds.size
+                hosting.cacheDisplay(in: bounds, to: rep)
+                let rendered = NSImage(size: bounds.size)
+                rendered.addRepresentation(rep)
+                image = rendered
+            } else {
+                image = nil
+            }
             write(image, to: url)
             note("wrote \(url.lastPathComponent) — \(image.map { "\($0.size)" } ?? "nil")")
         }

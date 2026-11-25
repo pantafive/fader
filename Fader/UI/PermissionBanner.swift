@@ -6,12 +6,12 @@ struct PermissionBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
+                .foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Audio access needed")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                 Text("Allow Fader to record system audio in Privacy & Security.")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -24,6 +24,6 @@ struct PermissionBanner: View {
             .controlSize(.small)
         }
         .padding(8)
-        .background(.yellow.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }

@@ -55,7 +55,7 @@ struct DeviceListSection: View {
                 isDropTarget: isDemoteTargeted(main: main)
             )
         }
-        .padding(.horizontal, -8)
+        .padding(.horizontal, -6)
     }
 
     /// Slot the dragged row currently aims at; `main.count` is the demote

@@ -26,9 +26,8 @@ struct ActiveOutputsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Output")
-                .font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            NativeLabel(text: "Sound", font: .systemFont(ofSize: 13, weight: .semibold))
             if rows.isEmpty {
                 // The default is a device the list hides (someone else's
                 // aggregate, mid-switch churn): name it, control it blind.
@@ -39,39 +38,32 @@ struct ActiveOutputsSection: View {
                 }
             }
         }
-        .padding(8)
-        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 10))
-        .overlay { if isPairTarget { dropHint } }
+        .opacity(isPairTarget ? 0.15 : 1.0)
+        .overlay { if isPairTarget { dropHint.padding(-6) } }
     }
 
     private func activeRow(_ row: Row) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: row.device.symbolName(
-                    direction: .output,
-                    bluetoothPeer: engine.bluetoothPeer(for: row.device)
-                ))
-                .font(.system(size: 13))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 18)
-                Text(row.device.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                DeviceIconBadge(
+                    systemName: row.device.symbolName(
+                        direction: .output,
+                        bluetoothPeer: engine.bluetoothPeer(for: row.device)
+                    ),
+                    style: .active
+                )
+                NativeLabel(text: row.device.name)
                 Spacer()
                 if row.removable {
                     Button {
                         engine.unpair(row.device)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.callout)
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
                     .help("Stop playing to this device")
-                } else {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
                 }
             }
             slider(for: row.volume)
@@ -89,16 +81,16 @@ struct ActiveOutputsSection: View {
                 get: { volume.volume },
                 set: { volume.setVolume($0) }
             ),
-            icon: volume.isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill",
+            icon: volume.isMuted ? "speaker.slash.fill" : "speaker.fill",
             iconDimmed: volume.isMuted,
             onIconTap: volume.canMute ? { volume.toggleMute() } : nil
         )
         .disabled(!volume.canSetVolume)
-        .opacity(volume.canSetVolume ? 1.0 : 0.4)
+        .opacity(volume.canSetVolume ? 1.0 : 0.45)
         if !volume.canSetVolume {
             Text("Volume is controlled on the device")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 

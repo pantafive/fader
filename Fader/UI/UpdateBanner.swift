@@ -14,14 +14,13 @@ struct UpdateBanner: View {
             Text(updater.stagedVersion != nil
                 ? "Fader \(version) is ready to install"
                 : "Fader \(version) is available")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.caption.weight(.semibold))
             Spacer()
             Button(updater.stagedVersion != nil ? "Restart" : "Update") {
                 updater.checkForUpdates()
             }
             .controlSize(.small)
         }
-        .padding(8)
-        .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 2)
     }
 }
