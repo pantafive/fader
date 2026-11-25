@@ -19,6 +19,29 @@ extension AudioDevice {
     }
 }
 
+/// Compact pill showing the live Bluetooth audio profile (e.g. "A2DP 44.1k",
+/// or an amber warning "mSBC 16k" when macOS drops into hands-free mono mode).
+struct BluetoothProfileBadge: View {
+    let profile: BluetoothAudioProfile
+
+    var body: some View {
+        Text(profile.badgeText)
+            .font(.system(size: 9.5, weight: profile.isDegraded ? .semibold : .medium))
+            .monospacedDigit()
+            .foregroundStyle(profile.isDegraded ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(
+                profile.isDegraded
+                    ? AnyShapeStyle(Color.orange.opacity(0.15))
+                    : AnyShapeStyle(.quaternary),
+                in: Capsule()
+            )
+            .fixedSize()
+            .help(profile.helpText)
+    }
+}
+
 /// One output device: transport icon, name, checkmark on the active one.
 /// Clicking switches the system default output. Bluetooth devices get a
 /// disconnect button on hover. With a `reorder` handler the whole row drags
@@ -71,6 +94,9 @@ struct DeviceRowView: View {
             Text(device.name)
                 .font(.system(size: 12, weight: isActive ? .semibold : .regular))
                 .lineLimit(1)
+            if monitor.direction == .output, let profile = device.bluetoothProfile {
+                BluetoothProfileBadge(profile: profile)
+            }
             Spacer()
             if let peer = bluetoothPeer, showsHover {
                 Button {

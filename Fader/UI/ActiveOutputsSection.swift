@@ -57,6 +57,9 @@ struct ActiveOutputsSection: View {
                 Text(row.device.name)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
+                if let profile = row.device.bluetoothProfile {
+                    BluetoothProfileBadge(profile: profile)
+                }
                 Spacer()
                 if row.removable {
                     Button {
