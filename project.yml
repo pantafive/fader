@@ -100,6 +100,7 @@ targets:
       - Fader/Audio/DevicePriorityStore.swift
       - Fader/Audio/JSONDefaults.swift
       - Fader/Audio/DeviceSymbol.swift
+      - Fader/Audio/BluetoothAudioProfile.swift
       - Fader/Audio/AudioDevice.swift
       - Fader/Audio/AudioApp.swift
       - Fader/Audio/DevicePriorityPolicy.swift

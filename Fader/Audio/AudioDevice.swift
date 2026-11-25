@@ -17,9 +17,38 @@ struct AudioDevice: Identifiable, Hashable {
     /// lifetime.
     let outputDataSource: UInt32
     let inputDataSource: UInt32
+    /// Nominal sample rate (Hz) and output channel count reported by the HAL;
+    /// used to distinguish Bluetooth A2DP stereo from HFP/SCO telephony mode.
+    let nominalSampleRate: Double
+    let outputChannelCount: Int
+
+    init(
+        id: AudioDeviceID,
+        uid: String,
+        name: String,
+        transport: UInt32,
+        outputDataSource: UInt32,
+        inputDataSource: UInt32,
+        nominalSampleRate: Double = 0,
+        outputChannelCount: Int = 0
+    ) {
+        self.id = id
+        self.uid = uid
+        self.name = name
+        self.transport = transport
+        self.outputDataSource = outputDataSource
+        self.inputDataSource = inputDataSource
+        self.nominalSampleRate = nominalSampleRate
+        self.outputChannelCount = outputChannelCount
+    }
 
     var isBluetooth: Bool {
         transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    var bluetoothProfile: BluetoothAudioProfile? {
+        guard isBluetooth else { return nil }
+        return BluetoothAudioProfile.infer(sampleRateHz: nominalSampleRate, outputChannels: outputChannelCount)
     }
 
     /// One of Fader's own aggregates — a per-app tap wrapper or the
@@ -48,7 +77,11 @@ extension AudioDevice {
         try? id.read(kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeOutput, into: &outputDataSource)
         var inputDataSource: UInt32 = 0
         try? id.read(kAudioDevicePropertyDataSource, scope: kAudioDevicePropertyScopeInput, into: &inputDataSource)
+        var nominalSampleRate: Float64 = 0
+        try? id.read(kAudioDevicePropertyNominalSampleRate, into: &nominalSampleRate)
+        let outputChannelCount = id.channelCount(scope: kAudioDevicePropertyScopeOutput)
         self.init(id: id, uid: uid, name: name, transport: transport,
-                  outputDataSource: outputDataSource, inputDataSource: inputDataSource)
+                  outputDataSource: outputDataSource, inputDataSource: inputDataSource,
+                  nominalSampleRate: nominalSampleRate, outputChannelCount: outputChannelCount)
     }
 }

@@ -15,6 +15,10 @@ final class AudioDeviceMonitor {
     private(set) var defaultDeviceID = AudioDeviceID.unknown
 
     @ObservationIgnored private var listeners: [HALListener] = []
+    /// Per-device sample-rate / stream-config listeners for connected Bluetooth
+    /// outputs so A2DP ↔ HFP/SCO transitions update the badge immediately even
+    /// when the device list itself doesn't change.
+    @ObservationIgnored private var streamListeners: [HALListener] = []
     // Not observed: stamps change on every refresh, but the view only needs
     // them re-read when defaultDeviceID (observed) moves a device between
     // the main list and the rarely-used group.
@@ -69,6 +73,7 @@ final class AudioDeviceMonitor {
         refreshTask?.cancel()
         refreshTask = nil
         listeners.removeAll()
+        streamListeners.removeAll()
         devices = []
         defaultDeviceID = .unknown
         hasBaseline = false
@@ -86,6 +91,26 @@ final class AudioDeviceMonitor {
                 Task { @MainActor [weak self] in self?.scheduleRefresh() }
             },
         ]
+    }
+
+    private func syncStreamListeners() {
+        guard direction == .output else {
+            streamListeners.removeAll()
+            return
+        }
+        streamListeners = devices.filter(\.isBluetooth).flatMap { device in
+            [
+                device.id.listen(kAudioDevicePropertyNominalSampleRate) { [weak self] in
+                    Task { @MainActor in self?.scheduleRefresh() }
+                },
+                device.id.listen(
+                    kAudioDevicePropertyStreamConfiguration,
+                    scope: kAudioDevicePropertyScopeOutput
+                ) { [weak self] in
+                    Task { @MainActor in self?.scheduleRefresh() }
+                },
+            ]
+        }
     }
 
     func setDefault(_ device: AudioDevice) {
@@ -189,6 +214,7 @@ final class AudioDeviceMonitor {
             else { return nil }
             return device
         })
+        syncStreamListeners()
 
         let reconnectUID = direction == .input ? inputReconnect.refresh(
             devices: Set(devices.map(\.uid)),
@@ -266,26 +292,5 @@ final class AudioDeviceMonitor {
         if let stamp = lastUsed[uid], now.timeIntervalSince(stamp) < 3600 { return }
         lastUsed[uid] = now
         usageStore.save(lastUsed, now: now)
-    }
-}
-
-extension AudioObjectID {
-    /// Total channels across all streams of the given scope.
-    func channelCount(scope: AudioObjectPropertyScope) -> Int {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(self, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
-        let listPtr = UnsafeMutableRawPointer.allocate(
-            byteCount: Int(size),
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        )
-        defer { listPtr.deallocate() }
-        guard AudioObjectGetPropertyData(self, &address, 0, nil, &size, listPtr) == noErr else { return 0 }
-        let buffers = UnsafeMutableAudioBufferListPointer(listPtr.assumingMemoryBound(to: AudioBufferList.self))
-        return buffers.reduce(0) { $0 + Int($1.mNumberChannels) }
     }
 }
